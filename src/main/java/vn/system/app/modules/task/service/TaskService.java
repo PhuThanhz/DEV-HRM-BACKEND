@@ -13,6 +13,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.extern.slf4j.Slf4j;
+
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.ScopeSpec;
 import vn.system.app.common.util.SecurityUtil;
@@ -36,6 +38,7 @@ import vn.system.app.modules.user.repository.UserRepository;
 import vn.system.app.modules.userposition.domain.UserPosition;
 import vn.system.app.modules.userposition.repository.UserPositionRepository;
 
+@Slf4j
 @Service
 public class TaskService {
 
@@ -143,24 +146,17 @@ public class TaskService {
             throw new IdInvalidException("Người thực hiện chính đã ngưng hoạt động");
         }
 
-        // Clean & deduplicate collaborator & observer lists
-        List<String> collabIds = sanitizeUserIds(req.getCollaboratorIds());
-        List<String> obsIds = sanitizeUserIds(req.getObserverIds());
+        // Clean & deduplicate collaborator & observer lists (tự động loại trừ người giao việc nếu có vì người giao việc đã là Creator)
+        List<String> collabIds = sanitizeUserIds(req.getCollaboratorIds()).stream()
+                .filter(id -> !id.equals(creator.getId()))
+                .collect(Collectors.toList());
+        List<String> obsIds = sanitizeUserIds(req.getObserverIds()).stream()
+                .filter(id -> !id.equals(creator.getId()) && !collabIds.contains(id))
+                .collect(Collectors.toList());
 
         // Rule 2: 1 user không giữ 2 role thi công/giám sát xung đột
         if (collabIds.contains(assignee.getId()) || obsIds.contains(assignee.getId())) {
             throw new IdInvalidException("Người thực hiện chính không thể đồng thời làm Người phối hợp hoặc Người quan sát");
-        }
-        if (collabIds.contains(creator.getId())) {
-            throw new IdInvalidException("Người giao việc không thể đồng thời làm Người phối hợp trên cùng một tác vụ");
-        }
-        if (obsIds.contains(creator.getId())) {
-            throw new IdInvalidException("Người giao việc không thể đồng thời làm Người quan sát trên cùng một tác vụ");
-        }
-        for (String cId : collabIds) {
-            if (obsIds.contains(cId)) {
-                throw new IdInvalidException("Một người dùng không thể vừa làm Người phối hợp vừa làm Người quan sát trên cùng một tác vụ");
-            }
         }
 
         if (req.getDueDate() == null) {
@@ -200,7 +196,6 @@ public class TaskService {
         task.setStartDate(req.getStartDate());
         task.setDueDate(req.getDueDate());
         task.setEstimatedHours(req.getEstimatedHours() != null ? req.getEstimatedHours() : 0.0);
-        task.setLoggedHours(0.0);
         task.setReworkCount(0);
         task.setJobDescriptionTaskId(req.getJobDescriptionTaskId());
         task.setJobDescriptionTaskItemId(req.getJobDescriptionTaskItemId());
@@ -248,6 +243,7 @@ public class TaskService {
         // Write Audit Log & Notify Assignee
         taskCommentService.writeAuditLog(savedTask, creator, "Đã giao tác vụ cho " + assignee.getName(), null);
         notifyUser(assignee.getId(), "TASK_ASSIGNED", creator.getName() + " đã giao cho bạn tác vụ: " + savedTask.getTitle(), "/admin/tasks?taskId=" + savedTask.getId());
+        notifyAddedParticipants(savedTask, creator, collaborators, observers);
 
         return convertToResDTO(savedTask, participants);
     }
@@ -296,31 +292,17 @@ public class TaskService {
             throw new IdInvalidException("Người thực hiện chính đã ngưng hoạt động");
         }
 
-        List<String> collabIds = sanitizeUserIds(req.getCollaboratorIds());
-        List<String> obsIds = sanitizeUserIds(req.getObserverIds());
-
         // Fetch original Creator of the task
         TaskParticipant creatorParticipant = taskParticipantRepository.findByTaskIdAndRole(task.getId(), TaskParticipantRole.CREATOR)
                 .orElse(null);
         User creator = creatorParticipant != null ? creatorParticipant.getUser() : null;
 
-        // Rule 2: Conflicting roles
-        if (collabIds.contains(newAssignee.getId()) || obsIds.contains(newAssignee.getId())) {
-            throw new IdInvalidException("Người thực hiện chính không thể đồng thời làm Người phối hợp hoặc Người quan sát");
-        }
-        if (creator != null) {
-            if (collabIds.contains(creator.getId())) {
-                throw new IdInvalidException("Người giao việc không thể đồng thời làm Người phối hợp trên cùng một tác vụ");
-            }
-            if (obsIds.contains(creator.getId())) {
-                throw new IdInvalidException("Người giao việc không thể đồng thời làm Người quan sát trên cùng một tác vụ");
-            }
-        }
-        for (String cId : collabIds) {
-            if (obsIds.contains(cId)) {
-                throw new IdInvalidException("Một người dùng không thể vừa làm Người phối hợp vừa làm Người quan sát trên cùng một tác vụ");
-            }
-        }
+        List<String> collabIds = sanitizeUserIds(req.getCollaboratorIds()).stream()
+                .filter(uId -> (creator == null || !uId.equals(creator.getId())) && !uId.equals(newAssignee.getId()))
+                .collect(Collectors.toList());
+        List<String> obsIds = sanitizeUserIds(req.getObserverIds()).stream()
+                .filter(uId -> (creator == null || !uId.equals(creator.getId())) && !uId.equals(newAssignee.getId()) && !collabIds.contains(uId))
+                .collect(Collectors.toList());
 
         List<User> collaborators = validateAndFetchActiveUsers(collabIds, "Người phối hợp");
         List<User> observers = validateAndFetchActiveUsers(obsIds, "Người quan sát");
@@ -383,6 +365,13 @@ public class TaskService {
             notifyDueDateChanged(task, actor, newAssignee.getId());
         }
 
+        // Chụp lại danh sách Phối hợp/Quan sát cũ trước khi xoá, để chỉ thông báo cho
+        // người MỚI được thêm vào (tránh spam mỗi lần sửa task mà không đổi người).
+        Set<String> oldCollabObsUserIds = taskParticipantRepository.findByTaskId(task.getId()).stream()
+                .filter(p -> p.getRole() == TaskParticipantRole.COLLABORATOR || p.getRole() == TaskParticipantRole.OBSERVER)
+                .map(p -> p.getUser().getId())
+                .collect(Collectors.toSet());
+
         Task savedTask = taskRepository.save(task);
 
         // CREATOR không đổi/xoá được qua PUT — giữ nguyên CREATOR, chỉ xoá các role khác
@@ -418,6 +407,14 @@ public class TaskService {
         }
 
         taskParticipantRepository.saveAll(updatedParticipants);
+
+        List<User> newlyAddedCollaborators = collaborators.stream()
+                .filter(u -> !oldCollabObsUserIds.contains(u.getId()))
+                .collect(Collectors.toList());
+        List<User> newlyAddedObservers = observers.stream()
+                .filter(u -> !oldCollabObsUserIds.contains(u.getId()))
+                .collect(Collectors.toList());
+        notifyAddedParticipants(savedTask, creator != null ? creator : actor, newlyAddedCollaborators, newlyAddedObservers);
 
         return convertToResDTO(savedTask, updatedParticipants);
     }
@@ -949,7 +946,9 @@ public class TaskService {
         }
 
         // Mọi user còn lại (DEPARTMENT_MANAGER, EMPLOYEE, ...): "Tất cả các vai trò"
-        // = union 4 tab → chỉ hiện task mà user có tham gia với BẤT KỲ role nào.
+        // = union 4 tab (participant với bất kỳ role nào) HOẶC task nằm trong phạm vi
+        // quản lý phòng ban/công ty của user — đồng bộ với TaskAccessService.canViewTask
+        // để quản lý thấy được task cấp dưới ngay ở danh sách/kanban, không chỉ khi mở chi tiết.
         Specification<Task> anyParticipantSpec = (root, query, cb) -> {
             var sub = query.subquery(Long.class);
             var participantRoot = sub.from(TaskParticipant.class);
@@ -957,7 +956,46 @@ public class TaskService {
                     .where(cb.equal(participantRoot.get("user").get("id"), currentUserId));
             return root.get("id").in(sub);
         };
-        return finalSpec.and(anyParticipantSpec);
+
+        Specification<Task> managementScopeSpec = buildManagementScopeSpec(scope);
+        if (managementScopeSpec == null) {
+            return finalSpec.and(anyParticipantSpec);
+        }
+        Specification<Task> visibilitySpec = anyParticipantSpec.or(managementScopeSpec);
+        return finalSpec.and(visibilitySpec);
+    }
+
+    /**
+     * Điều kiện "task nằm trong phạm vi quản lý phòng ban/công ty" — tương đương
+     * {@link TaskAccessService#isTaskInManagementScope}, viết dưới dạng Specification
+     * để dùng được ở tầng list (springfilter) thay vì chỉ ở tầng detail.
+     * - isDepartmentLevel (DEPARTMENT_MANAGER, ADMIN_SUB_3): chỉ lọc theo departmentIds
+     *   (phòng ban họ quản lý) — KHÔNG dùng companyIds, vì companyIds ở role này chỉ là
+     *   "công ty chứa phòng ban họ quản lý" (dùng cho mục đích khác), không phải phạm vi
+     *   được xem toàn công ty.
+     * - isCompanyLevel (ADMIN_SUB_2): lọc theo companyIds (công ty họ quản lý).
+     * User thường (không phải 2 loại trên) không được coi là có phạm vi quản lý task, dù
+     * companyIds/departmentIds của họ cũng có giá trị (chỉ để phục vụ mục đích khác).
+     */
+    private Specification<Task> buildManagementScopeSpec(UserScopeContext.UserScope scope) {
+        if (scope == null) {
+            return null;
+        }
+        boolean hasDeptScope = scope.isDepartmentLevel() && scope.departmentIds() != null && !scope.departmentIds().isEmpty();
+        boolean hasCompanyScope = scope.isCompanyLevel() && scope.companyIds() != null && !scope.companyIds().isEmpty();
+        if (!hasDeptScope && !hasCompanyScope) {
+            return null;
+        }
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (hasDeptScope) {
+                predicates.add(root.get("department").get("id").in(scope.departmentIds()));
+            }
+            if (hasCompanyScope) {
+                predicates.add(root.get("department").get("company").get("id").in(scope.companyIds()));
+            }
+            return cb.or(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
     }
 
     private ResTaskDTO convertToCalendarDTO(Task task, List<TaskParticipant> participants) {
@@ -1068,22 +1106,24 @@ public class TaskService {
             return;
         }
 
+        boolean hasDeptScope = scope.departmentIds() != null && !scope.departmentIds().isEmpty();
+        boolean hasCompanyScope = scope.companyIds() != null && !scope.companyIds().isEmpty();
+        if (!hasDeptScope && !hasCompanyScope) {
+            throw new IdInvalidException("Bạn chưa được gán phòng ban/công ty nào trong hệ thống, không thể tạo hoặc giao việc cho người khác. Vui lòng liên hệ quản trị viên để được gán phòng ban.");
+        }
+
         Set<String> allowedUserIds = new HashSet<>();
 
-        if (scope.departmentIds() != null && !scope.departmentIds().isEmpty()) {
+        if (hasDeptScope) {
             List<String> deptUserIds = userPositionRepository.findUserIdsByDepartmentIdsWithSubSections(scope.departmentIds());
             allowedUserIds.addAll(deptUserIds);
-        } else if (scope.companyIds() != null && !scope.companyIds().isEmpty()) {
+        } else {
             List<String> compUserIds = userPositionRepository.findUserIdsByCompanyIds(scope.companyIds());
             allowedUserIds.addAll(compUserIds);
         }
 
         if (creator != null) {
             allowedUserIds.add(creator.getId());
-        }
-
-        if (allowedUserIds.isEmpty()) {
-            return;
         }
 
         if (assignee != null && !allowedUserIds.contains(assignee.getId())) {
@@ -1170,13 +1210,23 @@ public class TaskService {
         try {
             notificationService.sendNotification(userId, "TASK", type, content, actionLink);
         } catch (Exception e) {
-            // Non-blocking notification error
+            log.warn("Không thể gửi thông báo TASK/{} cho user {}: {}", type, userId, e.getMessage());
         }
     }
 
     private void notifyDueDateChanged(Task task, User actor, String assigneeId) {
         taskCommentService.writeAuditLog(task, actor, "Đã gia hạn/thay đổi hạn chót tác vụ", null);
         notifyUser(assigneeId, "TASK_DEADLINE_CHANGED", actor.getName() + " đã thay đổi hạn chót tác vụ: " + task.getTitle(), "/admin/tasks?taskId=" + task.getId());
+    }
+
+    private void notifyAddedParticipants(Task task, User actor, List<User> collaborators, List<User> observers) {
+        String actorName = actor != null ? actor.getName() : "Người giao việc";
+        for (User collab : collaborators) {
+            notifyUser(collab.getId(), "TASK_ADDED_AS_COLLABORATOR", actorName + " đã thêm bạn làm Người phối hợp cho tác vụ: " + task.getTitle(), "/admin/tasks?taskId=" + task.getId());
+        }
+        for (User obs : observers) {
+            notifyUser(obs.getId(), "TASK_ADDED_AS_OBSERVER", actorName + " đã thêm bạn làm Người quan sát cho tác vụ: " + task.getTitle(), "/admin/tasks?taskId=" + task.getId());
+        }
     }
 
     public ResTaskDTO convertToResDTO(Task task, List<TaskParticipant> participants) {
@@ -1212,7 +1262,6 @@ public class TaskService {
         dto.setCompletedAt(task.getCompletedAt());
         dto.setIsOnTime(task.getIsOnTime());
         dto.setEstimatedHours(task.getEstimatedHours());
-        dto.setLoggedHours(task.getLoggedHours());
         dto.setReworkCount(task.getReworkCount());
         dto.setReworkReason(task.getReworkReason());
         dto.setJobDescriptionTaskId(task.getJobDescriptionTaskId());
@@ -1223,8 +1272,6 @@ public class TaskService {
         if (task.getJobDescriptionTaskItemId() != null && jdTaskItemContentMap != null) {
             dto.setJobDescriptionTaskItemContent(jdTaskItemContentMap.get(task.getJobDescriptionTaskItemId()));
         }
-        dto.setTemplateCriteriaId(task.getTemplateCriteriaId());
-
         if (task.getDepartment() != null) {
             dto.setDepartmentId(task.getDepartment().getId());
             dto.setDepartmentName(task.getDepartment().getName());

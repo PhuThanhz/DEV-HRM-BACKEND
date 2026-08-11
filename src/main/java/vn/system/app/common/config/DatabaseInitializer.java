@@ -850,6 +850,8 @@ public class DatabaseInitializer implements CommandLineRunner {
                 "/api/v1/users/{userId}/admin-scopes", "GET", "USERS");
         addPermissionIfMissing(newPerms, "Cập nhật phạm vi quản trị user",
                 "/api/v1/users/{userId}/admin-scopes", "PUT", "USERS");
+        addPermissionIfMissing(newPerms, "Tìm kiếm người dùng dạng dropdown",
+                "/api/v1/users/cross-company", "GET", "USERS");
 
         if (!newPerms.isEmpty()) {
             savePermissions(newPerms);
@@ -871,8 +873,6 @@ public class DatabaseInitializer implements CommandLineRunner {
                 .toList();
 
         addPermissionsToRoleIfMissing("SUPER_ADMIN", adminScopePermissions);
-        addPermissionsToRoleIfMissing("ADMIN_SUB_1", adminScopePermissions);
-        addPermissionsToRoleIfMissing("ADMIN_SUB_2", adminScopePermissions);
 
         Role departmentManagerRole = findRole("DEPARTMENT_MANAGER");
         if (departmentManagerRole == null) {
@@ -1114,9 +1114,8 @@ public class DatabaseInitializer implements CommandLineRunner {
                 .toList();
 
         List<Permission> userJdReadPermissions = allPermissions().stream()
-                .filter(p -> ("USERS".equals(p.getModule()) && "GET".equalsIgnoreCase(p.getMethod()) && "/api/v1/users".equals(p.getApiPath()))
-                        || ("/api/v1/job-descriptions/by-user/{userId}".equals(p.getApiPath()))
-                        || (employeeModule.equals(p.getModule()) && "GET".equalsIgnoreCase(p.getMethod())))
+                .filter(p -> ("USERS".equals(p.getModule()) && "GET".equalsIgnoreCase(p.getMethod()) && "/api/v1/users/cross-company".equals(p.getApiPath()))
+                        || ("/api/v1/job-descriptions/by-user/{userId}".equals(p.getApiPath())))
                 .toList();
 
         List<Role> allRoles = roleRepository.findAll();
@@ -1134,10 +1133,16 @@ public class DatabaseInitializer implements CommandLineRunner {
             User taskCollab = createUserIfNotExist("collab.task@gmail.com", "Nhân Viên Phối Hợp Test", employeeRole != null ? employeeRole : findRole("SUPER_ADMIN"));
             User taskObserver = createUserIfNotExist("observer.task@gmail.com", "Nhân Viên Quan Sát Test", employeeRole != null ? employeeRole : findRole("SUPER_ADMIN"));
             User taskDelegate = createUserIfNotExist("delegate.task@gmail.com", "Nhân Viên Nhận Ủy Quyền Test", employeeRole != null ? employeeRole : findRole("SUPER_ADMIN"));
+            User taskCollabMgr = createUserIfNotExist("collab.manager@gmail.com", "Trưởng Phòng Phối Hợp Test", deptMgrRole != null ? deptMgrRole : findRole("SUPER_ADMIN"));
 
-            if (taskAssignee != null && taskMgr != null && taskAssignee.getDirectManager() == null) {
+            if (taskAssignee != null && taskMgr != null) {
                 taskAssignee.setDirectManager(taskMgr);
                 this.userRepository.save(taskAssignee);
+            }
+
+            if (taskCollab != null && taskCollabMgr != null) {
+                taskCollab.setDirectManager(taskCollabMgr);
+                this.userRepository.save(taskCollab);
             }
 
             ensureUserPositionAndInfo(taskMgr, "NV-TASK-MGR", "0900000101", "MALE");
@@ -1145,6 +1150,7 @@ public class DatabaseInitializer implements CommandLineRunner {
             ensureUserPositionAndInfo(taskCollab, "NV-TASK-CLB", "0900000103", "MALE");
             ensureUserPositionAndInfo(taskObserver, "NV-TASK-OBS", "0900000104", "FEMALE");
             ensureUserPositionAndInfo(taskDelegate, "NV-TASK-DLG", "0900000105", "MALE");
+            ensureUserPositionAndInfo(taskCollabMgr, "NV-TASK-CLM", "0900000109", "MALE");
 
             User mgrUser = this.userRepository.findByEmail("manager@gmail.com");
             User creatorUser = this.userRepository.findByEmail("creator@gmail.com");
@@ -1299,14 +1305,61 @@ public class DatabaseInitializer implements CommandLineRunner {
     }
 
     private void syncFullPermissionRoles() {
-        List<Permission> adminPermissions = allPermissions().stream()
+        List<Permission> superAdminPermissions = allPermissions().stream()
                 .filter(permission -> !NON_ADMIN_BUSINESS_APPROVER_PERMISSION_NAMES.contains(permission.getName()))
                 .toList();
-        addPermissionsToRoleIfMissing("SUPER_ADMIN", adminPermissions);
-        addPermissionsToRoleIfMissing("ADMIN_SUB_1", adminPermissions);
+        addPermissionsToRoleIfMissing("SUPER_ADMIN", superAdminPermissions);
+
+        List<Permission> adminSub1Permissions = allPermissions().stream()
+                .filter(permission -> !NON_ADMIN_BUSINESS_APPROVER_PERMISSION_NAMES.contains(permission.getName()))
+                .filter(permission -> {
+                    String module = permission.getModule();
+                    if ("ROLES".equalsIgnoreCase(module) || "PERMISSIONS".equalsIgnoreCase(module)) {
+                        return false;
+                    }
+                    if ("USERS".equalsIgnoreCase(module)) {
+                        String method = permission.getMethod();
+                        String path = permission.getApiPath();
+                        return "GET".equalsIgnoreCase(method) && "/api/v1/users".equals(path);
+                    }
+                    return true;
+                })
+                .toList();
+
+        stripRestrictedManagementPermissionsFromNonSuperAdminRoles();
+        addPermissionsToRoleIfMissing("ADMIN_SUB_1", adminSub1Permissions);
+
         removePermissionsFromRoleIfPresent("SUPER_ADMIN", NON_ADMIN_BUSINESS_APPROVER_PERMISSION_NAMES);
         removePermissionsFromRoleIfPresent("ADMIN_SUB_1", NON_ADMIN_BUSINESS_APPROVER_PERMISSION_NAMES);
         removePermissionsFromRoleIfPresent("ADMIN_SUB_2", NON_ADMIN_BUSINESS_APPROVER_PERMISSION_NAMES);
+    }
+
+    private void stripRestrictedManagementPermissionsFromNonSuperAdminRoles() {
+        List<String> nonSuperAdminRoles = List.of("ADMIN_SUB_1", "ADMIN_SUB_2", "ADMIN_SUB_3", "EMPLOYEE", "DEPARTMENT_MANAGER", "KETOAN", "KETOANTRUONG", "DIRECTOR");
+        for (String roleName : nonSuperAdminRoles) {
+            Role role = findRole(roleName);
+            if (role == null || role.getPermissions() == null || role.getPermissions().isEmpty()) {
+                continue;
+            }
+            List<Permission> filtered = role.getPermissions().stream()
+                    .filter(p -> p != null)
+                    .filter(p -> {
+                        String module = p.getModule();
+                        if ("ROLES".equalsIgnoreCase(module) || "PERMISSIONS".equalsIgnoreCase(module) || "EMPLOYEES".equalsIgnoreCase(module)) {
+                            return false;
+                        }
+                        if ("USERS".equalsIgnoreCase(module)) {
+                            String method = p.getMethod();
+                            String path = p.getApiPath();
+                            return "GET".equalsIgnoreCase(method) && "/api/v1/users/cross-company".equals(path);
+                        }
+                        return true;
+                    })
+                    .toList();
+            if (filtered.size() != role.getPermissions().size()) {
+                replaceRolePermissionsIfChanged(role, filtered);
+            }
+        }
     }
 
     private void removePermissionsFromRoleIfPresent(String roleName, Set<String> permissionNames) {

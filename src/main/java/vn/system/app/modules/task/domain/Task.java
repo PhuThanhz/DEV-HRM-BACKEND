@@ -58,9 +58,6 @@ public class Task {
     private Double estimatedHours = 0.0;
 
     @Column(nullable = false)
-    private Double loggedHours = 0.0;
-
-    @Column(nullable = false)
     private Integer reworkCount = 0;
 
     @Column(columnDefinition = "TEXT")
@@ -85,9 +82,6 @@ public class Task {
     @JoinColumn(name = "job_description_task_item_id", insertable = false, updatable = false)
     @JsonIgnoreProperties({ "jobDescriptionTask" })
     private JobDescriptionTaskItem jobDescriptionTaskItem;
-
-    @Column(name = "template_criteria_id")
-    private Long templateCriteriaId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "department_id", nullable = false)
@@ -115,9 +109,6 @@ public class Task {
         }
         if (this.estimatedHours == null) {
             this.estimatedHours = 0.0;
-        }
-        if (this.loggedHours == null) {
-            this.loggedHours = 0.0;
         }
         if (this.reworkCount == null) {
             this.reworkCount = 0;

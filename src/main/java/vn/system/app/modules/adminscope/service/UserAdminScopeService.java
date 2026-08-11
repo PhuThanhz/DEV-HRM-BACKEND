@@ -184,7 +184,7 @@ public class UserAdminScopeService {
         User actor = userRepo.findByEmail(email);
         String actorRole = actor != null && actor.getRole() != null ? actor.getRole().getName() : "";
 
-        if (ROLE_SUPER_ADMIN.equals(actorRole) || ROLE_ADMIN_SUB_1.equals(actorRole)) {
+        if (ROLE_SUPER_ADMIN.equals(actorRole)) {
             return;
         }
 

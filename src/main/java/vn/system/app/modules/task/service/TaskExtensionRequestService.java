@@ -37,6 +37,7 @@ public class TaskExtensionRequestService {
     private final TaskCommentService taskCommentService;
     private final NotificationService notificationService;
     private final ApprovalDelegationService approvalDelegationService;
+    private final TaskAccessService taskAccessService;
 
     public TaskExtensionRequestService(
             TaskExtensionRequestRepository extensionRepository,
@@ -45,7 +46,8 @@ public class TaskExtensionRequestService {
             UserRepository userRepository,
             TaskCommentService taskCommentService,
             NotificationService notificationService,
-            ApprovalDelegationService approvalDelegationService) {
+            ApprovalDelegationService approvalDelegationService,
+            TaskAccessService taskAccessService) {
         this.extensionRepository = extensionRepository;
         this.taskRepository = taskRepository;
         this.participantRepository = participantRepository;
@@ -53,6 +55,7 @@ public class TaskExtensionRequestService {
         this.taskCommentService = taskCommentService;
         this.notificationService = notificationService;
         this.approvalDelegationService = approvalDelegationService;
+        this.taskAccessService = taskAccessService;
     }
 
     /*
@@ -213,6 +216,12 @@ public class TaskExtensionRequestService {
 
     @Transactional(readOnly = true)
     public List<ResTaskExtensionRequestDTO> fetchExtensionsByTask(Long taskId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IdInvalidException("Tác vụ không tồn tại"));
+        String currentUserId = SecurityUtil.getCurrentUserId()
+                .orElseThrow(() -> new IdInvalidException("Bạn chưa đăng nhập"));
+        taskAccessService.assertCanViewTask(task, currentUserId);
+
         return extensionRepository.findByTaskIdOrderByRequestedAtDesc(taskId).stream()
                 .map(this::convertToResDTO)
                 .collect(Collectors.toList());

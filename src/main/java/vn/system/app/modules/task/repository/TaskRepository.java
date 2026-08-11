@@ -2,6 +2,8 @@ package vn.system.app.modules.task.repository;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,4 +24,13 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             "jobDescriptionTaskItem"
     })
     List<Task> findAll(Specification<Task> spec, Sort sort);
+
+    @Override
+    @EntityGraph(attributePaths = {
+            "department",
+            "department.company",
+            "jobDescriptionTask",
+            "jobDescriptionTaskItem"
+    })
+    Page<Task> findAll(Specification<Task> spec, Pageable pageable);
 }

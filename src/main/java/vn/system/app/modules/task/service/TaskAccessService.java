@@ -31,18 +31,29 @@ public class TaskAccessService {
         if (scope.isSuperAdmin() || scope.isAdminLevel()) {
             return true;
         }
-
-        Long departmentId = task.getDepartment().getId();
-        if (scope.departmentIds() != null && scope.departmentIds().contains(departmentId)) {
-            return true;
+        // companyIds/departmentIds trong UserScope cũng được set cho NHÂN VIÊN THƯỜNG
+        // (để phục vụ filter đồng nghiệp/tài liệu cùng công ty-phòng ban ở module khác),
+        // không đại diện cho "phạm vi quản lý". Chỉ coi là management scope khi user thực
+        // sự có vai trò company-level (ADMIN_SUB_2) hoặc department-level (DEPARTMENT_MANAGER, ADMIN_SUB_3).
+        //
+        // Với isDepartmentLevel: chỉ so departmentIds — companyIds ở role này chỉ là "công ty
+        // chứa phòng ban họ quản lý" (KHÔNG phải phạm vi được xem toàn công ty), nên không dùng
+        // để mở rộng quyền xem. Với isCompanyLevel: so companyIds (công ty họ thực sự quản lý).
+        if (scope.isDepartmentLevel()) {
+            Long departmentId = task.getDepartment().getId();
+            if (scope.departmentIds() != null && scope.departmentIds().contains(departmentId)) {
+                return true;
+            }
         }
-
-        Long companyId = task.getDepartment().getCompany() != null
-                ? task.getDepartment().getCompany().getId()
-                : null;
-        return companyId != null
-                && scope.companyIds() != null
-                && scope.companyIds().contains(companyId);
+        if (scope.isCompanyLevel()) {
+            Long companyId = task.getDepartment().getCompany() != null
+                    ? task.getDepartment().getCompany().getId()
+                    : null;
+            if (companyId != null && scope.companyIds() != null && scope.companyIds().contains(companyId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean canViewTask(Task task, String currentUserId) {

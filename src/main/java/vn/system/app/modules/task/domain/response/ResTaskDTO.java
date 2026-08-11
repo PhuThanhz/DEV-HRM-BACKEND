@@ -22,14 +22,12 @@ public class ResTaskDTO {
     private Instant completedAt;
     private Boolean isOnTime;
     private Double estimatedHours;
-    private Double loggedHours;
     private Integer reworkCount;
     private String reworkReason;
     private Long jobDescriptionTaskId;
     private String jobDescriptionTaskTitle;
     private Long jobDescriptionTaskItemId;
     private String jobDescriptionTaskItemContent;
-    private Long templateCriteriaId;
     private Long departmentId;
     private String departmentName;
     private Long companyId;

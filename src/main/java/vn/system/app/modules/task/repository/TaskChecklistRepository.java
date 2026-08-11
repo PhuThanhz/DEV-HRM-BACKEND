@@ -15,8 +15,4 @@ public interface TaskChecklistRepository extends JpaRepository<TaskChecklist, Lo
     List<TaskChecklist> findByTaskIdIn(List<Long> taskIds);
 
     void deleteByTaskId(Long taskId);
-
-    long countByTaskId(Long taskId);
-
-    long countByTaskIdAndIsCompletedTrue(Long taskId);
 }
