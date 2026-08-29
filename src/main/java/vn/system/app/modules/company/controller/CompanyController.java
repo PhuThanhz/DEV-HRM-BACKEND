@@ -37,10 +37,6 @@ public class CompanyController {
     public ResponseEntity<ResCreateCompanyDTO> createCompany(
             @Valid @RequestBody ReqCreateCompanyDTO req) {
 
-        if (companyService.isCodeExist(req.getCode())) {
-            throw new RuntimeException("Mã công ty " + req.getCode() + " đã tồn tại");
-        }
-
         Company company = companyService.convertCreateReqToEntity(req);
         Company savedCompany = companyService.handleCreateCompany(company);
 
@@ -56,7 +52,7 @@ public class CompanyController {
     public ResponseEntity<ResCompanyDTO> getCompanyById(
             @PathVariable("id") long id) {
 
-        Company company = companyService.fetchEntityById(id);
+        Company company = companyService.fetchEntityByIdWithScopeCheck(id);
         return ResponseEntity.ok(
                 companyService.convertToResCompanyDTO(company));
     }

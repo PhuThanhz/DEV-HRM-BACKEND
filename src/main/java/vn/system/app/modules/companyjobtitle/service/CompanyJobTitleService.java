@@ -59,7 +59,7 @@ public class CompanyJobTitleService {
     private void validateScope(Long companyId) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope == null)
-            return;
+            throw new PermissionException("Không xác định được phạm vi truy cập");
 
         if (scope.isSuperAdmin() || scope.isAdminLevel())
             return;
@@ -192,6 +192,12 @@ public class CompanyJobTitleService {
     public CompanyJobTitle fetchEntityById(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy CompanyJobTitle với id = " + id));
+    }
+
+    public CompanyJobTitle fetchEntityByIdWithScopeCheck(Long id) {
+        CompanyJobTitle entity = fetchEntityById(id);
+        validateScope(entity.getCompany().getId());
+        return entity;
     }
 
     /*

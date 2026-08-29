@@ -92,7 +92,7 @@ public class CompanyJobTitleController {
             throws IdInvalidException {
 
         return ResponseEntity.ok(
-                service.convertToResDTO(service.fetchEntityById(id)));
+                service.convertToResDTO(service.fetchEntityByIdWithScopeCheck(id)));
     }
 
     /*

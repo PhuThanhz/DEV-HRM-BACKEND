@@ -15,6 +15,8 @@ public interface CompanyRepository
 
     boolean existsByCode(String code);
 
+    boolean existsByCodeIgnoreCase(String code);
+
     long countByIdIn(List<Long> ids);
 
 }

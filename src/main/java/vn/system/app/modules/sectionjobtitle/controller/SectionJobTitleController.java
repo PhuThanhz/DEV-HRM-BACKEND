@@ -88,7 +88,7 @@ public class SectionJobTitleController {
     public ResponseEntity<ResSectionJobTitleDTO> getOne(@PathVariable Long id)
             throws IdInvalidException {
 
-        SectionJobTitle entity = service.fetchEntityById(id);
+        SectionJobTitle entity = service.fetchEntityByIdWithScopeCheck(id);
         return ResponseEntity.ok(service.convertToResDTO(entity));
     }
 

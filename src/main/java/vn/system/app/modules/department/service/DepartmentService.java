@@ -188,7 +188,10 @@ public class DepartmentService {
         return departmentRepository.findByCompanyId(companyId)
                 .stream()
                 .filter(d -> {
-                    if (scope == null || scope.isAdminLevel()) {
+                    if (scope == null) {
+                        return false;
+                    }
+                    if (scope.isAdminLevel()) {
                         return true;
                     }
                     if (scope.isCompanyLevel()) {

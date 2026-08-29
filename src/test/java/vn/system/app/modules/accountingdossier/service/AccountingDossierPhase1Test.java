@@ -86,7 +86,8 @@ class AccountingDossierPhase1Test {
 
     @BeforeEach
     void setUp() {
-        vn.system.app.common.util.UserScopeContext.clear();
+        vn.system.app.common.util.UserScopeContext.set(new vn.system.app.common.util.UserScopeContext.UserScope(
+                null, null, null, true, true, false, false));
         approverResolutionService = new ApproverResolutionService(userRepository);
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         DossierAuditService dossierAuditService = new DossierAuditService(auditLogRepository);

@@ -58,7 +58,7 @@ public class JdFlowService {
     private void validateScope(Long companyId) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope == null)
-            return;
+            throw new PermissionException("Không xác định được phạm vi truy cập của người dùng");
 
         if (scope.isSuperAdmin() || scope.isAdminLevel())
             return;
@@ -85,6 +85,7 @@ public class JdFlowService {
         JdFlow flow = jdFlowRepository.findByJobDescriptionId(jdId);
         if (flow == null)
             return null;
+        validateScope(flow.getJobDescription().getCompany() != null ? flow.getJobDescription().getCompany().getId() : null);
         return convertToDTO(flow);
     }
 
@@ -114,6 +115,16 @@ public class JdFlowService {
             throw new RuntimeException("JD đã ban hành, không thể gửi duyệt");
 
         String finalComment = comment;
+
+        // ✅ Chặn re-route flow đang xử lý: chỉ người đang giữ JD (currentUser)
+        // mới được submit tiếp, trừ trường hợp JD hoàn toàn mới (chưa có flow)
+        if (!"REJECTED".equals(jd.getStatus())) {
+            JdFlow existingFlowCheck = jdFlowRepository.findByJobDescriptionId(jdId);
+            if (existingFlowCheck != null && existingFlowCheck.getCurrentUser() != null
+                    && !fromUser.getId().equals(existingFlowCheck.getCurrentUser().getId())) {
+                throw new RuntimeException("Bạn không phải người đang giữ JD này, không có quyền gửi duyệt");
+            }
+        }
 
         // ================== XỬ LÝ GỬI LẠI SAU KHI BỊ REJECTED ==================
         if ("REJECTED".equals(jd.getStatus())) {
@@ -559,7 +570,9 @@ public class JdFlowService {
     }
 
     private boolean isUserInScope(User u, UserScopeContext.UserScope scope) {
-        if (scope == null || scope.isSuperAdmin())
+        if (scope == null)
+            return false;
+        if (scope.isSuperAdmin())
             return true;
         return userPositionRepository.findByUser_IdAndActiveTrue(u.getId())
                 .stream()

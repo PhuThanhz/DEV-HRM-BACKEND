@@ -1102,7 +1102,10 @@ public class TaskService {
 
     private void validateParticipantScope(User creator, User assignee, List<User> collaborators, List<User> observers) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
-        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+        if (scope == null) {
+            throw new IdInvalidException("Không xác định được phạm vi người dùng, vui lòng đăng nhập lại");
+        }
+        if (scope.isSuperAdmin() || scope.isAdminLevel()) {
             return;
         }
 

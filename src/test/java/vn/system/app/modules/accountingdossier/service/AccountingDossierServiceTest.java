@@ -1132,8 +1132,16 @@ class AccountingDossierServiceTest {
         company.setId(100L);
         dossier.setCompany(company);
 
+        User chief = new User();
+        chief.setId("user-chief-id");
+        chief.setEmail("test-user");
+        vn.system.app.modules.role.domain.Role role = new vn.system.app.modules.role.domain.Role();
+        role.setName("CHIEF_ACCOUNTANT");
+        chief.setRole(role);
+
         when(repository.findById(id)).thenReturn(Optional.of(dossier));
         when(repository.save(any(AccountingDossier.class))).thenReturn(dossier);
+        when(userRepository.findByEmail("test-user")).thenReturn(chief);
 
         ResAccountingDossierDTO res = service.archive(id, req);
 

@@ -12,6 +12,9 @@ import lombok.RequiredArgsConstructor;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.common.util.annotation.ApiMessage;
 
+import vn.system.app.modules.companyprocedure.service.CompanyProcedureService;
+import vn.system.app.modules.confidentialprocedure.service.ConfidentialProcedureService;
+import vn.system.app.modules.departmentprocedure.service.DepartmentProcedureService;
 import vn.system.app.modules.sharetoken.domain.ProcedureShareToken;
 import vn.system.app.modules.sharetoken.domain.ShareTokenAccessLog;
 import vn.system.app.modules.sharetoken.domain.request.CreateShareTokenRequest;
@@ -25,6 +28,9 @@ import vn.system.app.modules.sharetoken.service.ProcedureShareTokenService;
 public class ShareTokenController {
 
     private final ProcedureShareTokenService shareTokenService;
+    private final CompanyProcedureService companyProcedureService;
+    private final DepartmentProcedureService departmentProcedureService;
+    private final ConfidentialProcedureService confidentialProcedureService;
 
     // =====================================================
     // TẠO SHARE TOKEN CHO 1 QUY TRÌNH
@@ -35,7 +41,7 @@ public class ShareTokenController {
             @PathVariable Long id,
             @Valid @RequestBody CreateShareTokenRequest req) {
 
-        rejectDocumentToken(req.getProcedureType());
+        assertProcedureAccess(id, req.getProcedureType());
         ResShareTokenDTO res = shareTokenService.handleCreate(id, req);
         return ResponseEntity.status(HttpStatus.CREATED).body(res);
     }
@@ -49,7 +55,7 @@ public class ShareTokenController {
             @PathVariable Long id,
             @RequestParam String procedureType) {
 
-        rejectDocumentToken(procedureType);
+        assertProcedureAccess(id, procedureType);
         List<ResShareTokenDTO> res = shareTokenService.fetchByProcedure(id, procedureType);
         return ResponseEntity.ok(res);
     }
@@ -60,7 +66,7 @@ public class ShareTokenController {
     @PatchMapping("/share-tokens/{tokenId}/revoke")
     @ApiMessage("Thu hồi link chia sẻ")
     public ResponseEntity<Void> revokeShareToken(@PathVariable Long tokenId) {
-        rejectDocumentToken(tokenId);
+        assertTokenAccess(tokenId);
         shareTokenService.handleRevoke(tokenId);
         return ResponseEntity.ok().build();
     }
@@ -73,7 +79,7 @@ public class ShareTokenController {
     public ResponseEntity<List<ShareTokenAccessLog>> getAccessLogs(
             @PathVariable Long tokenId) {
 
-        rejectDocumentToken(tokenId);
+        assertTokenAccess(tokenId);
         List<ShareTokenAccessLog> logs = shareTokenService.fetchAccessLogs(tokenId);
         return ResponseEntity.ok(logs);
     }
@@ -87,19 +93,34 @@ public class ShareTokenController {
             @PathVariable Long tokenId,
             @Valid @RequestBody SendShareEmailRequest req) {
 
-        rejectDocumentToken(tokenId);
+        assertTokenAccess(tokenId);
         shareTokenService.handleSendEmail(tokenId, req.getEmail());
         return ResponseEntity.ok().build();
     }
 
-    private void rejectDocumentToken(String procedureType) {
+    /**
+     * Chặn share-token của văn bản (dùng API riêng) và kiểm tra người gọi có quyền
+     * đọc/quản lý đúng quy trình (company/department/confidential) trước khi cho
+     * tạo/xem token — trước đây endpoint này chỉ chặn loại DOCUMENT, không hề kiểm
+     * tra quyền sở hữu procedureId nên bất kỳ user đăng nhập nào cũng gọi được.
+     */
+    private void assertProcedureAccess(Long procedureId, String procedureType) {
         if ("DOCUMENT".equals(procedureType)) {
             throw new IdInvalidException("Vui lòng dùng API chia sẻ văn bản");
         }
+        switch (procedureType) {
+            case "COMPANY" ->
+                companyProcedureService.validateReadAccess(companyProcedureService.fetchById(procedureId));
+            case "DEPARTMENT" ->
+                departmentProcedureService.validateReadAccess(departmentProcedureService.fetchById(procedureId));
+            case "CONFIDENTIAL" ->
+                confidentialProcedureService.validateReadAccess(confidentialProcedureService.fetchById(procedureId));
+            default -> throw new IdInvalidException("Loại quy trình không hợp lệ: " + procedureType);
+        }
     }
 
-    private void rejectDocumentToken(Long tokenId) {
+    private void assertTokenAccess(Long tokenId) {
         ProcedureShareToken token = shareTokenService.fetchById(tokenId);
-        rejectDocumentToken(token.getProcedureType());
+        assertProcedureAccess(token.getProcedureId(), token.getProcedureType());
     }
 }

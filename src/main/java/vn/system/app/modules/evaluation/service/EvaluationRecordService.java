@@ -633,9 +633,12 @@ public class EvaluationRecordService {
         if (existingApproverScores.isEmpty()) {
             List<EvaluationScore> managerScores = scoreRepo.findByEvaluationRecordIdAndScoredBy(recordId,
                     ScoredBy.MANAGER);
+            List<EvaluationScore> copiedScores = new java.util.ArrayList<>(managerScores.size());
             for (EvaluationScore ms : managerScores) {
-                saveOrUpdateScore(record, ms.getCriteria(), ScoredBy.APPROVER, ms.getScore());
+                copiedScores.add(saveOrUpdateScore(record, ms.getCriteria(), ScoredBy.APPROVER, ms.getScore(),
+                        null, null, false, false));
             }
+            scoreRepo.saveAll(copiedScores);
         }
 
         return saveOrUpdateScore(record, criteria, ScoredBy.APPROVER, score, true);
@@ -1215,6 +1218,12 @@ public class EvaluationRecordService {
     private EvaluationScore saveOrUpdateScore(EvaluationRecord record, TemplateCriteria criteria,
             ScoredBy scoredBy, Double score, List<TemplateCriteria> allCriteria, List<EvaluationScore> existingScores,
             boolean isManual) {
+        return saveOrUpdateScore(record, criteria, scoredBy, score, allCriteria, existingScores, isManual, true);
+    }
+
+    private EvaluationScore saveOrUpdateScore(EvaluationRecord record, TemplateCriteria criteria,
+            ScoredBy scoredBy, Double score, List<TemplateCriteria> allCriteria, List<EvaluationScore> existingScores,
+            boolean isManual, boolean persist) {
 
         EvaluationScore evalScore = null;
         if (existingScores != null) {
@@ -1279,7 +1288,7 @@ public class EvaluationRecordService {
             evalScore.setWeightedScore(score * criteriaWeight);
         }
 
-        return scoreRepo.save(evalScore);
+        return persist ? scoreRepo.save(evalScore) : evalScore;
     }
 
     private void recalculateParentScores(EvaluationRecord record, ScoredBy scoredBy) {

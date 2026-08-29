@@ -295,7 +295,7 @@ public class TaskController {
                 return date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant();
             }
         } catch (Exception e) {
-            return null;
+            throw new IdInvalidException("Tham số ngày không hợp lệ: " + input);
         }
     }
 }

@@ -46,11 +46,12 @@ public class PublicProcedureController {
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * Không tin tưởng "X-Forwarded-For" cho mục đích rate-limit vì hệ thống chưa cấu hình
+     * trusted reverse-proxy — header này do client tự đặt được, dùng nó làm khoá rate-limit
+     * sẽ cho phép né giới hạn số lần thử PIN bằng cách đổi header mỗi request.
+     */
     private String resolveClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip != null && !ip.isBlank()) {
-            return ip.split(",")[0].trim();
-        }
         return request.getRemoteAddr();
     }
 }

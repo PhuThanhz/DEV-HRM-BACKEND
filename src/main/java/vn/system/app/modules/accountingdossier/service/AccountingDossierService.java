@@ -235,12 +235,13 @@ public class AccountingDossierService {
         current.setDeletedAt(Instant.now());
         current.setDeletedBy(vn.system.app.common.util.SecurityUtil.getCurrentUserLogin().orElse(""));
         repository.save(current);
-        documentItemRepository.findByDossierIdAndActiveTrue(id).forEach(item -> {
+        List<AccountingDossierDocument> items = documentItemRepository.findByDossierIdAndActiveTrue(id);
+        items.forEach(item -> {
             item.setActive(false);
             item.setDeletedAt(Instant.now());
             item.setDeletedBy(current.getDeletedBy());
-            documentItemRepository.save(item);
         });
+        documentItemRepository.saveAll(items);
         dossierAuditService.writeLog(current, "SOFT_DELETE_DOSSIER", "Xóa mềm bộ chứng từ", "DOSSIER", current.getId(),
                 current.getStatus().name(), current.getStatus().name(), null, "active=false");
     }
@@ -812,11 +813,13 @@ public class AccountingDossierService {
                 if (!roleName.contains("ACCOUNTANT") && !roleName.contains("KETOAN") && !roleName.contains("KẾ TOÁN")) {
                     throw new PermissionException("Chỉ kế toán mới có quyền xử lý bước này");
                 }
+                validateStepCompanyMembership(step);
             } else if (step.getApproverType() == ApproverType.CHIEF_ACCOUNTANT) {
                 if (!roleName.contains("CHIEF_ACCOUNTANT") && !roleName.contains("KETOANTRUONG")
                         && !roleName.contains("KẾ TOÁN TRƯỞNG")) {
                     throw new PermissionException("Chỉ kế toán trưởng mới có quyền xử lý bước này");
                 }
+                validateStepCompanyMembership(step);
             } else if (step.getApproverType() == ApproverType.DEPARTMENT_MANAGER) {
                 throw new PermissionException("Bạn không có quyền xử lý bước phê duyệt này");
             } else if (step.getApproverType() == ApproverType.DIRECTOR) {
@@ -825,10 +828,19 @@ public class AccountingDossierService {
                 if (!hasDirectorPermission) {
                     throw new PermissionException("Chỉ Giám đốc mới có quyền xử lý bước này");
                 }
+                validateStepCompanyMembership(step);
             } else {
                 throw new PermissionException("Bạn không có quyền xử lý bước phê duyệt này (CUSTOM_STEP_NO_APPROVERS)");
             }
         }
+    }
+
+    /** Chặn user thuộc công ty khác duyệt hộ khi bước chưa được gán đích danh (fallback theo role name). */
+    private void validateStepCompanyMembership(AccountingDossierApprovalStep step) {
+        if (step.getDossier() == null || step.getDossier().getCompany() == null) {
+            return;
+        }
+        validateCompanyScope(step.getDossier().getCompany().getId());
     }
 
     private Instant calculateApprovalDueAt(AccountingDossierApprovalStep step) {
@@ -868,6 +880,19 @@ public class AccountingDossierService {
 
     private void validateDocumentMutator(AccountingDossier dossier) {
         validateDossierMutator(dossier);
+    }
+
+    /** Chỉ Kế toán trưởng hoặc Super Admin mới được đưa hồ sơ vào lưu trữ (đồng bộ với quyền chấm dứt hồ sơ). */
+    private void validateArchiver() {
+        vn.system.app.modules.user.domain.User currentUser = userRepository
+                .findByEmail(SecurityUtil.getCurrentUserLogin().orElse(""));
+        if (currentUser == null || currentUser.getRole() == null) {
+            throw new PermissionException("Không xác định được quyền lưu trữ bộ chứng từ");
+        }
+        String roleName = currentUser.getRole().getName().toUpperCase();
+        if (!"SUPER_ADMIN".equals(roleName) && !"CHIEF_ACCOUNTANT".equals(roleName) && !"KETOANTRUONG".equals(roleName)) {
+            throw new PermissionException("Chỉ Kế toán trưởng hoặc Super Admin mới được quyền lưu trữ");
+        }
     }
 
     /** Draft and returned dossiers may only be changed by their creator or an administrator. */
@@ -935,11 +960,11 @@ public class AccountingDossierService {
             if ("EMPLOYEE".equalsIgnoreCase(roleName)) {
                 throw new PermissionException("Bạn không có quyền xem chi tiết bộ chứng từ này");
             } else if ("DEPARTMENT_MANAGER".equalsIgnoreCase(roleName) || "ADMIN_SUB_3".equalsIgnoreCase(roleName)) {
-                if (scope != null && scope.departmentIds() != null && scope.departmentIds().contains(dossier.getDepartment().getId())) {
-                    return;
-                }
                 if (scope == null) {
-                    return; // no scope context = allow (consistent with validateCompanyScope null-scope behavior)
+                    throw new PermissionException("Không xác định được phạm vi người dùng, vui lòng đăng nhập lại");
+                }
+                if (scope.departmentIds() != null && scope.departmentIds().contains(dossier.getDepartment().getId())) {
+                    return;
                 }
                 throw new PermissionException("Bộ chứng từ không thuộc phạm vi bộ phận được phép truy cập của bạn");
             } else {
@@ -1386,6 +1411,7 @@ public class AccountingDossierService {
                 && dossier.getStatus() != AccountingDossierStatus.ARCHIVED) {
             throw new PermissionException("Chỉ bộ chứng từ đã duyệt mới được đưa vào lưu trữ");
         }
+        validateArchiver();
         AccountingDossierStatus oldStatus = dossier.getStatus();
         AccountingDossierStorageStatus oldStorageStatus = dossier.getStorageStatus();
         dossier.setStatus(AccountingDossierStatus.ARCHIVED);
@@ -1669,7 +1695,10 @@ public class AccountingDossierService {
 
     private void validateCompanyScope(Long companyId) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
-        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+        if (scope == null) {
+            throw new PermissionException("Không xác định được phạm vi người dùng, vui lòng đăng nhập lại");
+        }
+        if (scope.isSuperAdmin() || scope.isAdminLevel()) {
             return;
         }
         if (scope.companyIds() == null || !scope.companyIds().contains(companyId)) {

@@ -63,7 +63,9 @@ public class DashboardService {
                 long totalSection;
 
                 // SUPER_ADMIN và ADMIN_SUB_1 đều thấy toàn bộ hệ thống
-                if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+                if (scope == null) {
+                        return new DashboardSummaryDTO(0, 0, 0);
+                } else if (scope.isSuperAdmin() || scope.isAdminLevel()) {
                         totalCompany = companyRepository.count();
                         totalDepartment = departmentRepository.count();
                         totalSection = sectionRepository.count();
@@ -156,7 +158,10 @@ public class DashboardService {
         }
 
         private List<DepartmentCompletenessProjection> findScopedCompletenessOverview(UserScopeContext.UserScope scope) {
-                if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+                if (scope == null) {
+                        return List.of();
+                }
+                if (scope.isSuperAdmin() || scope.isAdminLevel()) {
                         return departmentRepository.findCompletenessOverviewAll();
                 }
                 if (scope.isDepartmentLevel()) {
@@ -173,7 +178,10 @@ public class DashboardService {
 
         private Specification<Department> scopeSpecification(UserScopeContext.UserScope scope) {
                 return (root, query, cb) -> {
-                        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+                        if (scope == null) {
+                                return cb.disjunction();
+                        }
+                        if (scope.isSuperAdmin() || scope.isAdminLevel()) {
                                 return cb.conjunction();
                         }
                         if (scope.isDepartmentLevel()) {

@@ -20,7 +20,8 @@ import vn.system.app.modules.task.domain.enums.TaskStatus;
 @Table(name = "tasks", indexes = {
         @Index(name = "idx_tasks_department_status", columnList = "department_id, status"),
         @Index(name = "idx_tasks_due_date", columnList = "due_date"),
-        @Index(name = "idx_tasks_job_description_task_id", columnList = "job_description_task_id")
+        @Index(name = "idx_tasks_job_description_task_id", columnList = "job_description_task_id"),
+        @Index(name = "idx_tasks_status_completed_at", columnList = "status, completed_at")
 })
 @Getter
 @Setter

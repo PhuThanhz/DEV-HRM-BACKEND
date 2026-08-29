@@ -1,6 +1,7 @@
 package vn.system.app.modules.task.service;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -29,6 +30,8 @@ import vn.system.app.modules.task.repository.TaskRepository;
 
 @Service
 public class TaskSummaryReportService {
+
+    private static final long MAX_REPORT_RANGE_DAYS = 366;
 
     private final TaskRepository taskRepository;
     private final TaskParticipantRepository participantRepository;
@@ -119,6 +122,19 @@ public class TaskSummaryReportService {
         return spec;
     }
 
+    // Boundary protection: chặn khoảng thời gian báo cáo quá lớn (full scan/export toàn bộ dữ liệu completed)
+    private Instant[] resolveReportDateRange(Instant from, Instant to) {
+        Instant filterFrom = (from == null)
+                ? Instant.now().minus(90, java.time.temporal.ChronoUnit.DAYS)
+                : from;
+        Instant filterTo = to;
+        Instant effectiveTo = filterTo != null ? filterTo : Instant.now();
+        if (Duration.between(filterFrom, effectiveTo).toDays() > MAX_REPORT_RANGE_DAYS) {
+            throw new IdInvalidException("Khoảng thời gian báo cáo không được vượt quá " + MAX_REPORT_RANGE_DAYS + " ngày");
+        }
+        return new Instant[] { filterFrom, filterTo };
+    }
+
     private List<ResTaskDTO> convertTasksToDtos(List<Task> tasks) {
         List<Long> taskIds = tasks.stream().map(Task::getId).toList();
 
@@ -197,11 +213,9 @@ public class TaskSummaryReportService {
             Instant from, Instant to, Long departmentId, Long companyId, String assigneeId, TaskPriority priority, String title,
             Boolean isOnTime, String createdBy, Boolean isJdTask) {
 
-        // Boundary protection: Default to last 90 days if from is null (regardless of to) to prevent unbounded lower bound queries
-        final Instant filterFrom = (from == null)
-                ? Instant.now().minus(90, java.time.temporal.ChronoUnit.DAYS)
-                : from;
-        final Instant filterTo = to;
+        Instant[] range = resolveReportDateRange(from, to);
+        Instant filterFrom = range[0];
+        Instant filterTo = range[1];
 
         Specification<Task> spec = buildSpecification(filterFrom, filterTo, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask);
         List<Task> completedTasks = taskRepository.findAll(spec);
@@ -242,10 +256,9 @@ public class TaskSummaryReportService {
     @Transactional(readOnly = true)
     public byte[] exportToExcel(Instant from, Instant to, Long departmentId, Long companyId, String assigneeId, TaskPriority priority, String title,
             Boolean isOnTime, String createdBy, Boolean isJdTask) {
-        final Instant filterFrom = (from == null)
-                ? Instant.now().minus(90, java.time.temporal.ChronoUnit.DAYS)
-                : from;
-        final Instant filterTo = to;
+        Instant[] range = resolveReportDateRange(from, to);
+        Instant filterFrom = range[0];
+        Instant filterTo = range[1];
 
         Specification<Task> spec = buildSpecification(filterFrom, filterTo, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask);
         List<Task> completedTasks = taskRepository.findAll(spec);

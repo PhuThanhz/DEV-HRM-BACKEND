@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.modules.companyjobtitle.domain.CompanyJobTitle;
 import vn.system.app.modules.companyjobtitle.repository.CompanyJobTitleRepository;
@@ -76,7 +77,7 @@ public class UserPositionService {
                         .orElseGet(() -> {
                             UserPosition p = new UserPosition();
                             p.setUser(user);
-                            p.setSource(req.getSource());
+                            p.setSource(req.getSource().toUpperCase());
                             p.setCompanyJobTitle(cjt);
                             return p;
                         });
@@ -103,7 +104,7 @@ public class UserPositionService {
                         .orElseGet(() -> {
                             UserPosition p = new UserPosition();
                             p.setUser(user);
-                            p.setSource(req.getSource());
+                            p.setSource(req.getSource().toUpperCase());
                             p.setDepartmentJobTitle(djt);
                             return p;
                         });
@@ -130,7 +131,7 @@ public class UserPositionService {
                         .orElseGet(() -> {
                             UserPosition p = new UserPosition();
                             p.setUser(user);
-                            p.setSource(req.getSource());
+                            p.setSource(req.getSource().toUpperCase());
                             p.setSectionJobTitle(sjt);
                             return p;
                         });
@@ -180,6 +181,12 @@ public class UserPositionService {
     // GET USERS BY COMPANY
     // =====================================================
     public List<ResUserPositionDTO> fetchByCompany(Long companyId) {
+
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope != null && !scope.isAdminLevel() && !scope.companyIds().contains(companyId)) {
+            return List.of();
+        }
+
         return repo.findActiveByCompanyId(companyId)
                 .stream()
                 .map(this::convertToResDTO)
@@ -230,6 +237,7 @@ public class UserPositionService {
 
             case "COMPANY" -> {
                 var cjt = p.getCompanyJobTitle();
+                if (cjt == null) break;
                 res.setJobTitle(buildJobTitleInfo(cjt.getJobTitle()));
 
                 ResUserPositionDTO.CompanyInfo ci = new ResUserPositionDTO.CompanyInfo();
@@ -240,6 +248,7 @@ public class UserPositionService {
 
             case "DEPARTMENT" -> {
                 var djt = p.getDepartmentJobTitle();
+                if (djt == null) break;
                 res.setJobTitle(buildJobTitleInfo(djt.getJobTitle()));
 
                 ResUserPositionDTO.CompanyInfo ci = new ResUserPositionDTO.CompanyInfo();
@@ -255,6 +264,7 @@ public class UserPositionService {
 
             case "SECTION" -> {
                 var sjt = p.getSectionJobTitle();
+                if (sjt == null) break;
                 res.setJobTitle(buildJobTitleInfo(sjt.getJobTitle()));
 
                 ResUserPositionDTO.CompanyInfo ci = new ResUserPositionDTO.CompanyInfo();
@@ -271,6 +281,9 @@ public class UserPositionService {
                 si.setId(sjt.getSection().getId());
                 si.setName(sjt.getSection().getName());
                 res.setSection(si);
+            }
+
+            default -> {
             }
         }
 

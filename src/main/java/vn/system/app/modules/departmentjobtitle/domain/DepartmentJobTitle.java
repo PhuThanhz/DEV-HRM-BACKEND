@@ -10,7 +10,9 @@ import vn.system.app.modules.department.domain.Department;
 import vn.system.app.modules.jobtitle.domain.JobTitle;
 
 @Entity
-@Table(name = "department_job_titles")
+@Table(name = "department_job_titles", uniqueConstraints = {
+        @UniqueConstraint(columnNames = { "department_id", "job_title_id" })
+})
 @Getter
 @Setter
 public class DepartmentJobTitle {

@@ -95,7 +95,7 @@ public class DepartmentJobTitleController {
     public ResponseEntity<ResDepartmentJobTitleDTO> fetchOne(@PathVariable Long id)
             throws IdInvalidException {
 
-        DepartmentJobTitle entity = this.service.fetchEntityById(id);
+        DepartmentJobTitle entity = this.service.fetchEntityByIdWithScopeCheck(id);
         return ResponseEntity.ok(this.service.convertToResDTO(entity));
     }
 

@@ -60,7 +60,7 @@ public class DepartmentJobTitleService {
     private void validateScope(Long companyId) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope == null)
-            return;
+            throw new PermissionException("Không xác định được phạm vi truy cập");
 
         if (scope.isSuperAdmin() || scope.isAdminLevel())
             return;
@@ -169,10 +169,16 @@ public class DepartmentJobTitleService {
 
         Long companyId = entity.getDepartment().getCompany().getId();
         Long jobId = entity.getJobTitle().getId();
+        Long deptId = entity.getDepartment().getId();
 
         if (companyRepo.existsByCompany_IdAndJobTitle_IdAndActiveTrue(companyId, jobId)) {
             throw new IdInvalidException(
                     "Chức danh đang được gán ở cấp công ty, không thể khôi phục.");
+        }
+
+        if (sectionRepo.existsBySection_Department_IdAndJobTitle_IdAndActiveTrue(deptId, jobId)) {
+            throw new IdInvalidException(
+                    "Chức danh đang được gán ở bộ phận, không thể khôi phục.");
         }
 
         entity.setActive(true);
@@ -340,6 +346,12 @@ public class DepartmentJobTitleService {
         return repository.findById(id)
                 .orElseThrow(() -> new IdInvalidException(
                         "Không tìm thấy gán chức danh - phòng ban với id: " + id));
+    }
+
+    public DepartmentJobTitle fetchEntityByIdWithScopeCheck(Long id) {
+        DepartmentJobTitle entity = fetchEntityById(id);
+        validateScope(entity.getDepartment().getCompany() != null ? entity.getDepartment().getCompany().getId() : null);
+        return entity;
     }
 
     /*

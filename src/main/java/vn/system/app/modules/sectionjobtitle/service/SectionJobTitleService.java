@@ -17,6 +17,7 @@ import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.ScopeSpec;
 
+import vn.system.app.modules.companyjobtitle.repository.CompanyJobTitleRepository;
 import vn.system.app.modules.departmentjobtitle.service.DepartmentJobTitleService;
 import vn.system.app.modules.jobtitle.domain.JobTitle;
 import vn.system.app.modules.jobtitle.service.JobTitleService;
@@ -34,17 +35,20 @@ public class SectionJobTitleService {
     private final JobTitleService jobTitleService;
     private final SectionService sectionService;
     private final DepartmentJobTitleService departmentJobTitleService;
+    private final CompanyJobTitleRepository companyRepo;
 
     public SectionJobTitleService(
             SectionJobTitleRepository repository,
             JobTitleService jobTitleService,
             SectionService sectionService,
-            DepartmentJobTitleService departmentJobTitleService) {
+            DepartmentJobTitleService departmentJobTitleService,
+            CompanyJobTitleRepository companyRepo) {
 
         this.repository = repository;
         this.jobTitleService = jobTitleService;
         this.sectionService = sectionService;
         this.departmentJobTitleService = departmentJobTitleService;
+        this.companyRepo = companyRepo;
     }
 
     /**
@@ -53,7 +57,7 @@ public class SectionJobTitleService {
     private void validateScope(Long companyId) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope == null)
-            return;
+            throw new PermissionException("Không xác định được phạm vi truy cập");
 
         if (scope.isSuperAdmin() || scope.isAdminLevel())
             return;
@@ -86,6 +90,13 @@ public class SectionJobTitleService {
 
         Long deptId = section.getDepartment().getId();
         Long jobId = jobTitle.getId();
+        Long companyId = section.getDepartment().getCompany().getId();
+
+        // Không cho gán nếu đã active ở cấp công ty
+        if (companyRepo.existsByCompany_IdAndJobTitle_IdAndActiveTrue(companyId, jobId)) {
+            throw new IdInvalidException(
+                    "Chức danh đã được gán ở cấp công ty, không thể gán vào bộ phận.");
+        }
 
         // Không cho gán nếu đã active trực tiếp ở phòng ban
         if (departmentJobTitleService.existsActiveInDepartment(deptId, jobId)) {
@@ -141,14 +152,26 @@ public class SectionJobTitleService {
             throw new IdInvalidException("Bản ghi đang hoạt động, không cần khôi phục.");
         }
 
+        Long deptId = entity.getSection().getDepartment().getId();
+        Long jobId = entity.getJobTitle().getId();
+        Long companyId = entity.getSection().getDepartment().getCompany().getId();
+
+        if (companyRepo.existsByCompany_IdAndJobTitle_IdAndActiveTrue(companyId, jobId)) {
+            throw new IdInvalidException(
+                    "Chức danh đang được gán ở cấp công ty, không thể khôi phục.");
+        }
+
+        if (departmentJobTitleService.existsActiveInDepartment(deptId, jobId)) {
+            throw new IdInvalidException(
+                    "Chức danh đang được gán trực tiếp ở phòng ban, không thể khôi phục.");
+        }
+
         entity.setActive(true);
         entity.setUpdatedAt(Instant.now());
         entity.setUpdatedBy(SecurityUtil.getCurrentUserLogin().orElse("system"));
 
         SectionJobTitle saved = repository.save(entity);
 
-        Long deptId = entity.getSection().getDepartment().getId();
-        Long jobId = entity.getJobTitle().getId();
         departmentJobTitleService.assignIfNotExists(deptId, jobId);
 
         return saved;
@@ -192,6 +215,14 @@ public class SectionJobTitleService {
     public SectionJobTitle fetchEntityById(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy gán chức danh - bộ phận với id: " + id));
+    }
+
+    public SectionJobTitle fetchEntityByIdWithScopeCheck(Long id) {
+        SectionJobTitle entity = fetchEntityById(id);
+        validateScope(entity.getSection().getDepartment().getCompany() != null
+                ? entity.getSection().getDepartment().getCompany().getId()
+                : null);
+        return entity;
     }
 
     /*

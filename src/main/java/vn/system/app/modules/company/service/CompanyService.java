@@ -3,6 +3,7 @@ package vn.system.app.modules.company.service;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -21,8 +22,6 @@ import vn.system.app.modules.company.domain.response.ResCompanyDTO;
 import vn.system.app.modules.company.domain.response.ResCreateCompanyDTO;
 import vn.system.app.modules.company.domain.response.ResUpdateCompanyDTO;
 import vn.system.app.modules.company.repository.CompanyRepository;
-import vn.system.app.common.util.ScopeSpec;
-import vn.system.app.common.util.UserScopeContext;
 
 @Service
 public class CompanyService {
@@ -46,7 +45,14 @@ public class CompanyService {
 
     @Transactional
     public Company handleCreateCompany(Company company) {
-        return companyRepository.save(company);
+        if (isCodeExist(company.getCode())) {
+            throw new IdInvalidException("Mã công ty " + company.getCode() + " đã tồn tại");
+        }
+        try {
+            return companyRepository.save(company);
+        } catch (DataIntegrityViolationException e) {
+            throw new IdInvalidException("Mã công ty " + company.getCode() + " đã tồn tại");
+        }
     }
 
     /* ================= UPDATE ================= */
@@ -87,6 +93,12 @@ public class CompanyService {
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy công ty"));
     }
 
+    public Company fetchEntityByIdWithScopeCheck(Long id) {
+        Company company = fetchEntityById(id);
+        checkCompanyScope(company.getId());
+        return company;
+    }
+
     /* ================= FETCH ALL ================= */
 
     public ResultPaginationDTO fetchAllCompany(
@@ -123,7 +135,7 @@ public class CompanyService {
     /* ================= CHECK ================= */
 
     public boolean isCodeExist(String code) {
-        return companyRepository.existsByCode(code);
+        return companyRepository.existsByCodeIgnoreCase(code);
     }
 
     /* ================= CONVERT ================= */

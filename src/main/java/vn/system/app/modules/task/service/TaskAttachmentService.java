@@ -181,12 +181,16 @@ public class TaskAttachmentService {
         return list.stream().map(this::convertToResDTO).collect(Collectors.toList());
     }
 
+    /**
+     * Trả về null nếu file không phải Task attachment (caller phải tự kiểm tra nguồn khác),
+     * trả về true/false nếu xác định được đây là Task attachment.
+     */
     @Transactional(readOnly = true)
-    public boolean canCurrentUserAccessFile(String fileName, String folder) {
+    public Boolean checkAccessIfTaskAttachment(String fileName, String folder) {
         TaskAttachment attachment = attachmentRepository.findFirstByFileNameAndFolder(fileName, folder)
                 .orElse(null);
         if (attachment == null) {
-            return true;
+            return null;
         }
 
         String currentUserId = SecurityUtil.getCurrentUserId().orElse(null);

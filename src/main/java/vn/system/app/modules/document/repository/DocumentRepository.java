@@ -51,4 +51,6 @@ public interface DocumentRepository extends
     List<Document> findByFolder_Id(Long folderId);
 
     Optional<Document> findByQrToken(String qrToken);
+
+    Optional<Document> findFirstByFileUrlsContaining(String fileName);
 }

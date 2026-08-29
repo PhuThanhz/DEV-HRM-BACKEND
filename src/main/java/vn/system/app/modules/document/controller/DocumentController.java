@@ -16,12 +16,14 @@ import lombok.RequiredArgsConstructor;
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.ScopeSpec;
 import vn.system.app.common.util.annotation.ApiMessage;
+import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.modules.document.domain.Document;
 import vn.system.app.modules.document.domain.DocumentAccess;
 import vn.system.app.modules.document.domain.DocumentTargetCompany;
 import vn.system.app.modules.document.domain.request.DocumentRequest;
 import vn.system.app.modules.document.domain.response.ResDocumentDTO;
 import vn.system.app.modules.document.service.DocumentService;
+import vn.system.app.modules.document.util.DocumentAccessSpecs;
 import vn.system.app.common.util.SecurityUtil;
 import jakarta.persistence.criteria.Subquery;
 import jakarta.persistence.criteria.Root;
@@ -128,8 +130,10 @@ public class DocumentController {
             Pageable pageable) {
         
         vn.system.app.common.util.UserScopeContext.UserScope scope = vn.system.app.common.util.UserScopeContext.get();
-        
-        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+
+        if (scope == null) {
+            throw new PermissionException("Không xác định được phạm vi người dùng, vui lòng đăng nhập lại");
+        } else if (scope.isSuperAdmin() || scope.isAdminLevel()) {
             // Super Admin & Admin Sub 1 (ALL): Bypass filter, see everything
         } else if (scope.isCompanyLevel()) {
             // Admin Sub 2 (COMPANY): Filter by companyId OR cross-company access
@@ -137,7 +141,8 @@ public class DocumentController {
             Specification<Document> targetCompanySpec = buildTargetCompanySpec();
             Specification<Document> accessSpec = buildAccessSpec();
             Specification<Document> scopeSpec = companySpec.or(targetCompanySpec).or(accessSpec);
-            spec = (spec == null) ? scopeSpec.and(buildNotExcludedSpec()) : spec.and(scopeSpec).and(buildNotExcludedSpec());
+            scopeSpec = scopeSpec.and(DocumentAccessSpecs.confidentialGuard());
+            spec = (spec == null) ? scopeSpec.and(DocumentAccessSpecs.notExcluded()) : spec.and(scopeSpec).and(DocumentAccessSpecs.notExcluded());
         } else {
             // User bình thường (INDIVIDUAL): Filter by createdBy OR accessList OR company/department scope for non-confidential documents
             Specification<Document> individualSpec = (root, query, cb) -> {
@@ -210,7 +215,7 @@ public class DocumentController {
                 jakarta.persistence.criteria.Predicate folderManagerPred = cb.exists(managerSubquery);
                 
                 return cb.and(
-                    buildNotExcludedPredicate(root, query, cb, currentUserId, scope.departmentIds()),
+                    DocumentAccessSpecs.notExcludedPredicate(root, query, cb, currentUserId, scope.departmentIds()),
                     cb.or(createdByPred, accessPred, companyLevelPred, deptLevelPred, folderOwnerPred, folderManagerPred)
                 );
             };
@@ -257,47 +262,6 @@ public class DocumentController {
             targetCompanyRoot.get("companyId").in(companyIds)
         );
         return targetCompanySubquery;
-    }
-
-    private Specification<Document> buildNotExcludedSpec() {
-        return (root, query, cb) -> {
-            String currentUserId = SecurityUtil.getCurrentUserId().orElse("");
-            vn.system.app.common.util.UserScopeContext.UserScope scope = vn.system.app.common.util.UserScopeContext.get();
-            return buildNotExcludedPredicate(root, query, cb, currentUserId, scope != null ? scope.departmentIds() : null);
-        };
-    }
-
-    private jakarta.persistence.criteria.Predicate buildNotExcludedPredicate(
-            Root<Document> root,
-            jakarta.persistence.criteria.CriteriaQuery<?> query,
-            jakarta.persistence.criteria.CriteriaBuilder cb,
-            String currentUserId,
-            java.util.Set<Long> departmentIds) {
-
-        Subquery<Integer> excludedUserSubquery = query.subquery(Integer.class);
-        Root<Document> excludedUserRoot = excludedUserSubquery.from(Document.class);
-        Join<Document, User> excludedUserJoin = excludedUserRoot.join("excludedUsers", JoinType.INNER);
-        excludedUserSubquery.select(cb.literal(1));
-        excludedUserSubquery.where(
-            cb.equal(excludedUserRoot.get("id"), root.get("id")),
-            cb.equal(excludedUserJoin.get("id"), currentUserId)
-        );
-
-        jakarta.persistence.criteria.Predicate notExcludedUser = cb.not(cb.exists(excludedUserSubquery));
-        if (departmentIds == null || departmentIds.isEmpty()) {
-            return notExcludedUser;
-        }
-
-        Subquery<Integer> excludedDepartmentSubquery = query.subquery(Integer.class);
-        Root<Document> excludedDepartmentRoot = excludedDepartmentSubquery.from(Document.class);
-        Join<Document, Department> excludedDepartmentJoin = excludedDepartmentRoot.join("excludedDepartments", JoinType.INNER);
-        excludedDepartmentSubquery.select(cb.literal(1));
-        excludedDepartmentSubquery.where(
-            cb.equal(excludedDepartmentRoot.get("id"), root.get("id")),
-            excludedDepartmentJoin.get("id").in(departmentIds)
-        );
-
-        return cb.and(notExcludedUser, cb.not(cb.exists(excludedDepartmentSubquery)));
     }
 
     // =====================================================

@@ -487,11 +487,13 @@ public class DocumentFolderService {
 
         List<Document> directDocs = documentRepository.findByFolder_Id(folderId);
         List<ResDocumentDTO> rs = directDocs.stream()
+                .filter(doc -> !documentService.isExcludedForCurrentUser(doc))
                 .map(documentService::convertToDTO)
                 .collect(Collectors.toList());
 
         List<DocumentShortcut> shortcuts = shortcutRepository.findByFolderId(folderId);
         List<ResDocumentDTO> shortcutDocs = shortcuts.stream()
+                .filter(s -> !documentService.isExcludedForCurrentUser(s.getDocument()))
                 .map(s -> {
                     ResDocumentDTO dto = documentService.convertToDTO(s.getDocument());
                     dto.setIsShortcut(true);

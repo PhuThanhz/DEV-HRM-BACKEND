@@ -5,10 +5,13 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import vn.system.app.common.util.UserScopeContext;
+import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.modules.jd.jdflow.domain.JdFlowLog;
 import vn.system.app.modules.jd.jdflow.domain.response.ResJdFlowLogDTO;
 import vn.system.app.modules.jd.jdflow.repository.JdFlowLogRepository;
 import vn.system.app.modules.jd.jobdescription.domain.JobDescription;
+import vn.system.app.modules.jd.jobdescription.repository.JobDescriptionRepository;
 import vn.system.app.modules.user.domain.User;
 import vn.system.app.modules.userposition.domain.UserPosition;
 import vn.system.app.modules.userposition.repository.UserPositionRepository;
@@ -20,12 +23,39 @@ public class JdFlowLogService {
 
     private final JdFlowLogRepository repository;
     private final UserPositionRepository userPositionRepository;
+    private final JobDescriptionRepository jobDescriptionRepository;
 
     public JdFlowLogService(
             JdFlowLogRepository repository,
-            UserPositionRepository userPositionRepository) {
+            UserPositionRepository userPositionRepository,
+            JobDescriptionRepository jobDescriptionRepository) {
         this.repository = repository;
         this.userPositionRepository = userPositionRepository;
+        this.jobDescriptionRepository = jobDescriptionRepository;
+    }
+
+    /**
+     * Kiểm tra phạm vi truy cập của người dùng
+     */
+    private void validateScope(Long companyId) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null)
+            throw new PermissionException("Không xác định được phạm vi truy cập của người dùng");
+
+        if (scope.isSuperAdmin() || scope.isAdminLevel())
+            return;
+
+        if (companyId == null) {
+            throw new PermissionException("Chỉ Quản trị viên hệ thống mới có quyền thao tác dữ liệu toàn cục");
+        }
+
+        if (scope.isCompanyLevel()) {
+            if (scope.companyIds() == null || !scope.companyIds().contains(companyId)) {
+                throw new PermissionException("Bạn không có quyền thao tác dữ liệu cho công ty này");
+            }
+        } else {
+            throw new PermissionException("Bạn không có quyền thực hiện thao tác này");
+        }
     }
 
     /*
@@ -316,6 +346,10 @@ public class JdFlowLogService {
     }
 
     public List<ResJdFlowLogDTO> fetchLogs(Long jdId) {
+        JobDescription jd = jobDescriptionRepository.findById(jdId)
+                .orElseThrow(() -> new RuntimeException("JD không tồn tại"));
+        validateScope(jd.getCompany() != null ? jd.getCompany().getId() : null);
+
         List<JdFlowLog> logs = repository
                 .findByJobDescriptionIdOrderByCreatedAtAsc(jdId);
 

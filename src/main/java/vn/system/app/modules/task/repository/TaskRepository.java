@@ -33,4 +33,13 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             "jobDescriptionTaskItem"
     })
     Page<Task> findAll(Specification<Task> spec, Pageable pageable);
+
+    @Override
+    @EntityGraph(attributePaths = {
+            "department",
+            "department.company",
+            "jobDescriptionTask",
+            "jobDescriptionTaskItem"
+    })
+    List<Task> findAll(Specification<Task> spec);
 }

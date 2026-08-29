@@ -343,6 +343,27 @@ public class ConfidentialProcedureService {
                 .orElseThrow(() -> new IdInvalidException("Quy trình không tồn tại"));
     }
 
+    public void validateReadAccess(ConfidentialProcedure procedure) {
+        String username = SecurityUtil.getCurrentUserLogin()
+                .orElseThrow(() -> new IdInvalidException("Không xác định được người dùng"));
+
+        User user = userRepository.findByEmail(username);
+        if (user == null) {
+            throw new IdInvalidException("Người dùng không tồn tại");
+        }
+
+        if (user.getRole() != null) {
+            String roleName = user.getRole().getName();
+            if ("SUPER_ADMIN".equals(roleName) || "ADMIN_SUB_1".equals(roleName)) {
+                return;
+            }
+        }
+
+        if (procedure.getCreatedBy() == null || !procedure.getCreatedBy().equals(username)) {
+            throw new PermissionException("Bạn không có quyền truy cập quy trình mật này");
+        }
+    }
+
     // =====================================================
     // FETCH ALL
     // =====================================================

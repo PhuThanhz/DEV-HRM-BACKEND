@@ -20,7 +20,11 @@ import vn.system.app.modules.documentfolder.domain.DocumentFolder;
 import vn.system.app.modules.user.domain.User;
 
 @Entity
-@Table(name = "document")
+@Table(name = "document", indexes = {
+        @Index(name = "idx_document_category_active", columnList = "category_id,active"),
+        @Index(name = "idx_document_department_active", columnList = "department_id,active"),
+        @Index(name = "idx_document_is_locked", columnList = "is_locked")
+})
 @Getter
 @Setter
 @JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })

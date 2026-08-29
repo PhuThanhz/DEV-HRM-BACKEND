@@ -376,8 +376,13 @@ public class DepartmentObjectiveService {
     public List<vn.system.app.modules.departmentobjective.domain.response.ResDepartmentMissionSummaryDTO> fetchSummary() {
         UserScopeContext.UserScope scope = UserScopeContext.get();
 
+        // Không xác định được phạm vi → không trả dữ liệu (an toàn hơn là coi như admin)
+        if (scope == null) {
+            return java.util.Collections.emptyList();
+        }
+
         // Admin level → load ALL departments
-        if (scope == null || scope.isAdminLevel()) {
+        if (scope.isAdminLevel()) {
             return repository.getSummaryAll();
         }
 

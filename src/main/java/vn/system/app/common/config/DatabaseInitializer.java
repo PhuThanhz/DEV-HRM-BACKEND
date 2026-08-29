@@ -124,7 +124,7 @@ public class DatabaseInitializer implements CommandLineRunner {
                 }
             }
             String dbUrl = this.environment.getProperty("spring.datasource.url");
-            if (dbUrl != null && !dbUrl.contains("localhost") && !dbUrl.contains("127.0.0.1") && !dbUrl.contains("hrm_0107") && !dbUrl.contains("hrm_21062026")) {
+            if (dbUrl != null && !dbUrl.contains("localhost") && !dbUrl.contains("127.0.0.1") && !dbUrl.contains("hrm_0107") && !dbUrl.contains("hrm_test1") && !dbUrl.contains("hrm_21062026")) {
                 isProd = true;
             }
         }

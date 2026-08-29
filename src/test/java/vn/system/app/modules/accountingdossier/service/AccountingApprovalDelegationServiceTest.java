@@ -279,9 +279,9 @@ class AccountingApprovalDelegationServiceTest {
             d2.setDelegatorUserId("user-3");
             d2.setDelegateUserId("user-4");
 
-            when(delegationRepository.findVisible(anyBoolean(), anyBoolean(), anyString(), anyCollection(), any(), any(), any(), any()))
+            when(delegationRepository.findVisible(anyBoolean(), anyBoolean(), anyString(), anyCollection(), any(), any(), any(), any(), any()))
                     .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(d1, d2)));
-            vn.system.app.common.response.ResultPaginationDTO page = service.list(org.springframework.data.domain.PageRequest.of(0, 10), null, null);
+            vn.system.app.common.response.ResultPaginationDTO page = service.list(org.springframework.data.domain.PageRequest.of(0, 10), null, null, null);
             assertEquals(2, ((List<?>) page.getResult()).size());
         } finally {
             UserScopeContext.clear();
@@ -314,9 +314,9 @@ class AccountingApprovalDelegationServiceTest {
             d3.setDelegatorUserId("user-4"); // Unrelated delegation
             d3.setDelegateUserId("user-5");
 
-            when(delegationRepository.findVisible(anyBoolean(), anyBoolean(), anyString(), anyCollection(), any(), any(), any(), any()))
+            when(delegationRepository.findVisible(anyBoolean(), anyBoolean(), anyString(), anyCollection(), any(), any(), any(), any(), any()))
                     .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(d1, d2)));
-            vn.system.app.common.response.ResultPaginationDTO page = service.list(org.springframework.data.domain.PageRequest.of(0, 10), null, null);
+            vn.system.app.common.response.ResultPaginationDTO page = service.list(org.springframework.data.domain.PageRequest.of(0, 10), null, null, null);
             List<ResAccountingApprovalDelegationDTO> list = (List<ResAccountingApprovalDelegationDTO>) page.getResult();
             assertEquals(2, list.size());
         } finally {

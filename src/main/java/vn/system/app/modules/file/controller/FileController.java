@@ -26,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import vn.system.app.common.util.annotation.ApiMessage;
 import vn.system.app.common.util.error.StorageException;
+import vn.system.app.modules.document.service.DocumentService;
 import vn.system.app.modules.file.domain.response.ResUploadFileDTO;
 import vn.system.app.modules.file.service.FileService;
 import vn.system.app.modules.task.service.TaskAttachmentService;
@@ -36,10 +37,31 @@ public class FileController {
 
         private final FileService fileService;
         private final TaskAttachmentService taskAttachmentService;
+        private final DocumentService documentService;
 
-        public FileController(FileService fileService, TaskAttachmentService taskAttachmentService) {
+        public FileController(
+                        FileService fileService,
+                        TaskAttachmentService taskAttachmentService,
+                        DocumentService documentService) {
                 this.fileService = fileService;
                 this.taskAttachmentService = taskAttachmentService;
+                this.documentService = documentService;
+        }
+
+        /**
+         * Task attachment và Document đều có cơ chế phân quyền riêng (canViewTask, DocumentAccess/exclude).
+         * File không khớp nguồn nào (avatar, procedures...) giữ hành vi cũ: cho phép user đã đăng nhập.
+         */
+        private boolean canAccessFile(String fileName, String folder) {
+                Boolean taskDecision = taskAttachmentService.checkAccessIfTaskAttachment(fileName, folder);
+                if (taskDecision != null) {
+                        return taskDecision;
+                }
+                Boolean documentDecision = documentService.checkAccessIfDocumentFile(fileName);
+                if (documentDecision != null) {
+                        return documentDecision;
+                }
+                return true;
         }
 
         // =========================
@@ -101,8 +123,8 @@ public class FileController {
                         @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader)
                         throws StorageException, IOException {
 
-                List<String> allowedFolders = Arrays.asList("avatar", "procedures", "documents");
-                boolean allowed = allowedFolders.stream().anyMatch(folder::startsWith);
+                List<String> allowedFolders = Arrays.asList("avatar", "procedures");
+                boolean allowed = allowedFolders.stream().anyMatch(folder::equals);
                 if (!allowed) {
                         return ResponseEntity.status(403).build();
                 }
@@ -157,7 +179,7 @@ public class FileController {
                         @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader)
                         throws StorageException, IOException {
 
-                if (!taskAttachmentService.canCurrentUserAccessFile(fileName, folder)) {
+                if (!canAccessFile(fileName, folder)) {
                         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
                 }
 
@@ -227,7 +249,7 @@ public class FileController {
                         folder = "documents";
                 }
 
-                if (!taskAttachmentService.canCurrentUserAccessFile(fileName, folder)) {
+                if (!canAccessFile(fileName, folder)) {
                         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
                 }
 

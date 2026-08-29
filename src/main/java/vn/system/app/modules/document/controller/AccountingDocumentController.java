@@ -19,6 +19,7 @@ import vn.system.app.modules.document.domain.request.AccountingDocumentRequest;
 import vn.system.app.modules.document.domain.request.DocumentRequest;
 import vn.system.app.modules.document.domain.response.ResDocumentDTO;
 import vn.system.app.modules.document.service.DocumentService;
+import vn.system.app.modules.document.util.DocumentAccessSpecs;
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.modules.documentcategory.repository.DocumentCategoryRepository;
 import vn.system.app.modules.documentcategory.domain.DocumentCategory;
@@ -127,8 +128,9 @@ public class AccountingDocumentController {
         } else {
             // Xem chứng từ của công ty hiện tại
             Specification<Document> companySpec = ScopeSpec.byCompanyScope("department.company.id");
-            accSpec = accSpec.and(companySpec);
+            accSpec = accSpec.and(companySpec).and(DocumentAccessSpecs.confidentialGuard());
         }
+        accSpec = accSpec.and(DocumentAccessSpecs.notExcluded());
 
         spec = spec == null ? accSpec : spec.and(accSpec);
         return ResponseEntity.ok(service.fetchAll(spec, pageable));
@@ -153,12 +155,13 @@ public class AccountingDocumentController {
         if (scope.isSuperAdmin() || scope.isAdminLevel()) {
         } else {
             Specification<Document> companySpec = ScopeSpec.byCompanyScope("department.company.id");
-            accSpec = accSpec.and(companySpec);
+            accSpec = accSpec.and(companySpec).and(DocumentAccessSpecs.confidentialGuard());
         }
+        accSpec = accSpec.and(DocumentAccessSpecs.notExcluded());
         spec = spec == null ? accSpec : spec.and(accSpec);
 
         java.util.List<Document> list = service.fetchAllList(spec);
-        java.util.List<ResDocumentDTO> dtoList = list.stream().map(service::convertToDTO).collect(java.util.stream.Collectors.toList());
+        java.util.List<ResDocumentDTO> dtoList = service.convertToDtoListBatched(list);
         return ResponseEntity.ok(dtoList);
     }
 

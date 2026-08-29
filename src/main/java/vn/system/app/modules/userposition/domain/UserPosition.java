@@ -12,7 +12,9 @@ import vn.system.app.modules.sectionjobtitle.domain.SectionJobTitle;
 import vn.system.app.modules.user.domain.User;
 
 @Entity
-@Table(name = "user_positions")
+@Table(name = "user_positions", indexes = {
+        @Index(name = "idx_user_positions_user_active", columnList = "user_id, active")
+})
 @Getter
 @Setter
 public class UserPosition {

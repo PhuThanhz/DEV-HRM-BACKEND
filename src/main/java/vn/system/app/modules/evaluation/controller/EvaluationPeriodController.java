@@ -84,7 +84,16 @@ public class EvaluationPeriodController {
     public ResponseEntity<ResPeriodTemplateDTO> addTemplateToPeriod(
             @PathVariable Long periodId,
             @RequestBody Map<String, Object> body) {
-        Long templateId = Long.valueOf(body.get("templateId").toString());
+        Object rawTemplateId = body.get("templateId");
+        if (rawTemplateId == null) {
+            throw new IdInvalidException("templateId không được để trống");
+        }
+        Long templateId;
+        try {
+            templateId = Long.valueOf(rawTemplateId.toString());
+        } catch (NumberFormatException e) {
+            throw new IdInvalidException("templateId không hợp lệ");
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(mapper.toResPeriodTemplateDTO(periodService.addTemplateToPeriod(periodId, templateId)));
     }
@@ -158,7 +167,12 @@ public class EvaluationPeriodController {
         if (startDateStr == null || startDateStr.isBlank()) {
             throw new IdInvalidException("Ngày mở cổng không được để trống");
         }
-        Instant newStartDate = Instant.parse(startDateStr);
+        Instant newStartDate;
+        try {
+            newStartDate = Instant.parse(startDateStr);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new IdInvalidException("Ngày mở cổng không đúng định dạng");
+        }
         return ResponseEntity.ok(mapper.toResPeriodDTO(periodService.adjustStartDate(id, newStartDate)));
     }
 }

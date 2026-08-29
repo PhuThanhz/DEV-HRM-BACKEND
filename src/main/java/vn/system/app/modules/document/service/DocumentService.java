@@ -278,11 +278,14 @@ public class DocumentService {
             }
         }
 
-        if (req.getDepartmentId() == null) {
+        if (req.getDepartmentId() == null && req.getFolderId() == null) {
             throw new IdInvalidException("Phòng ban ban hành không được để trống");
         }
-        Department department = departmentRepository.findById(req.getDepartmentId())
-                .orElseThrow(() -> new IdInvalidException("Phòng ban không tồn tại"));
+        Department department = null;
+        if (req.getDepartmentId() != null) {
+            department = departmentRepository.findById(req.getDepartmentId())
+                    .orElseThrow(() -> new IdInvalidException("Phòng ban không tồn tại"));
+        }
 
         Long requestedCompanyId = getCompanyId(department);
         if (requestedCompanyId != null || req.getFolderId() == null) {
@@ -394,11 +397,14 @@ public class DocumentService {
             }
         }
 
-        if (req.getDepartmentId() == null) {
+        if (req.getDepartmentId() == null && req.getFolderId() == null) {
             throw new IdInvalidException("Phòng ban ban hành không được để trống");
         }
-        Department department = departmentRepository.findById(req.getDepartmentId())
-                .orElseThrow(() -> new IdInvalidException("Phòng ban không tồn tại"));
+        Department department = null;
+        if (req.getDepartmentId() != null) {
+            department = departmentRepository.findById(req.getDepartmentId())
+                    .orElseThrow(() -> new IdInvalidException("Phòng ban không tồn tại"));
+        }
 
         Long requestedCompanyId = getCompanyId(department);
         if (requestedCompanyId != null || req.getFolderId() == null) {
@@ -658,7 +664,24 @@ public class DocumentService {
         Page<Document> page = repository.findAll(spec, pageable);
         List<Document> docs = page.getContent();
 
-        // Batch load access + targetCompany cho toàn bộ page — tránh N+1
+        ResultPaginationDTO rs = new ResultPaginationDTO();
+        ResultPaginationDTO.Meta meta = new ResultPaginationDTO.Meta();
+        meta.setPage(pageable.getPageNumber() + 1);
+        meta.setPageSize(pageable.getPageSize());
+        meta.setPages(page.getTotalPages());
+        meta.setTotal(page.getTotalElements());
+        rs.setMeta(meta);
+        rs.setResult(convertToDtoListBatched(docs));
+
+        return rs;
+    }
+
+    public List<Document> fetchAllList(Specification<Document> spec) {
+        return repository.findAll(spec);
+    }
+
+    /** Batch-load access/targetCompany/user-name cho cả danh sách document — tránh N+1 (mỗi document lẻ tốn 2-3 query riêng). */
+    public List<ResDocumentDTO> convertToDtoListBatched(List<Document> docs) {
         List<Long> docIds = docs.stream().map(Document::getId).collect(Collectors.toList());
 
         Map<Long, List<DocumentAccess>> accessByDocId = (docIds.isEmpty() ? java.util.Collections.<DocumentAccess>emptyList()
@@ -670,7 +693,6 @@ public class DocumentService {
                 : targetCompanyRepository.findByDocument_IdIn(docIds)).stream()
                 .collect(Collectors.groupingBy(t -> t.getDocument().getId()));
 
-        // Batch load users từ tất cả access records
         List<String> allUserIds = accessByDocId.values().stream()
                 .flatMap(List::stream)
                 .map(DocumentAccess::getUserId)
@@ -685,69 +707,56 @@ public class DocumentService {
                                 u -> u.getName(),
                                 (a, b) -> a));
 
-        ResultPaginationDTO rs = new ResultPaginationDTO();
-        ResultPaginationDTO.Meta meta = new ResultPaginationDTO.Meta();
-        meta.setPage(pageable.getPageNumber() + 1);
-        meta.setPageSize(pageable.getPageSize());
-        meta.setPages(page.getTotalPages());
-        meta.setTotal(page.getTotalElements());
-        rs.setMeta(meta);
-        rs.setResult(docs.stream()
+        return docs.stream()
                 .map(d -> convertToDTO(d,
                         accessByDocId.getOrDefault(d.getId(), java.util.Collections.emptyList()),
                         targetByDocId.getOrDefault(d.getId(), java.util.Collections.emptyList()),
                         userNamesMap))
-                .collect(Collectors.toList()));
-
-        return rs;
-    }
-
-    public List<Document> fetchAllList(Specification<Document> spec) {
-        return repository.findAll(spec);
+                .collect(Collectors.toList());
     }
 
     // =====================================================
     // FETCH BY COMPANY
     // =====================================================
     public List<ResDocumentDTO> fetchByCompany(Long companyId) {
-        return repository.findByCompanyId(companyId)
+        List<Document> docs = repository.findByCompanyId(companyId)
                 .stream()
                 .filter(this::canReadDocument)
-                .map(this::convertToDTO)
                 .collect(Collectors.toList());
+        return convertToDtoListBatched(docs);
     }
 
     // =====================================================
     // FETCH BY DEPARTMENT
     // =====================================================
     public List<ResDocumentDTO> fetchByDepartment(Long departmentId) {
-        return repository.findByDepartmentIdIncludingMapped(departmentId)
+        List<Document> docs = repository.findByDepartmentIdIncludingMapped(departmentId)
                 .stream()
                 .filter(this::canReadDocument)
-                .map(this::convertToDTO)
                 .collect(Collectors.toList());
+        return convertToDtoListBatched(docs);
     }
 
     // =====================================================
     // FETCH BY SECTION
     // =====================================================
     public List<ResDocumentDTO> fetchBySection(Long sectionId) {
-        return repository.findBySection_Id(sectionId)
+        List<Document> docs = repository.findBySection_Id(sectionId)
                 .stream()
                 .filter(this::canReadDocument)
-                .map(this::convertToDTO)
                 .collect(Collectors.toList());
+        return convertToDtoListBatched(docs);
     }
 
     // =====================================================
     // FETCH BY CATEGORY
     // =====================================================
     public List<ResDocumentDTO> fetchByCategory(Long categoryId) {
-        return repository.findByCategory_Id(categoryId)
+        List<Document> docs = repository.findByCategory_Id(categoryId)
                 .stream()
                 .filter(this::canReadDocument)
-                .map(this::convertToDTO)
                 .collect(Collectors.toList());
+        return convertToDtoListBatched(docs);
     }
 
     // =====================================================
@@ -1187,6 +1196,19 @@ public class DocumentService {
         }
     }
 
+    /**
+     * Trả về null nếu fileName không thuộc bất kỳ Document nào (caller phải tự kiểm tra nguồn khác),
+     * trả về true/false nếu xác định được đây là file đính kèm của Document.
+     */
+    @Transactional(readOnly = true)
+    public Boolean checkAccessIfDocumentFile(String fileName) {
+        Document document = repository.findFirstByFileUrlsContaining(fileName).orElse(null);
+        if (document == null) {
+            return null;
+        }
+        return canReadDocument(document);
+    }
+
     private void validateReadAccess(Document document) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope != null && (scope.isSuperAdmin() || scope.isAdminLevel())) {
@@ -1256,6 +1278,21 @@ public class DocumentService {
         }
 
         throw new PermissionException("Bạn không có quyền truy cập tài liệu này");
+    }
+
+    /**
+     * Dùng cho các nơi liệt kê Document theo phạm vi khác (vd. theo folder) — nơi đó
+     * đã tự kiểm tra quyền truy cập cấp folder/company nhưng cần lọc thêm exclude
+     * (excludedUsers/excludedDepartments) theo đúng chuẩn validateReadAccess.
+     */
+    public boolean isExcludedForCurrentUser(Document document) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope != null && (scope.isSuperAdmin() || scope.isAdminLevel())) {
+            return false;
+        }
+        String currentUserId = SecurityUtil.getCurrentUserId().orElse("");
+        Set<Long> departmentIds = scope != null ? scope.departmentIds() : null;
+        return isExcludedFromDocument(document, currentUserId, departmentIds);
     }
 
     private boolean isExcludedFromDocument(Document document, String currentUserId, Set<Long> departmentIds) {

@@ -1,6 +1,7 @@
 package vn.system.app.modules.evaluation.service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -425,6 +426,7 @@ public class EvaluationPeriodService {
         boolean employeePhaseStarted = !now.isBefore(period.getEmployeeStartDate());
 
         // Sinh evaluation_record cho từng nhân viên
+        List<EvaluationRecord> newRecords = new ArrayList<>(employees.size());
         for (PeriodEmployee pe : employees) {
             if (pe.getTemplate() == null || !validatedTemplateIds.contains(pe.getTemplate().getId())) {
                 throw new IdInvalidException(String.format(
@@ -438,15 +440,18 @@ public class EvaluationPeriodService {
             record.setIndirectManager(pe.getIndirectManager());
             record.setTemplate(pe.getTemplate());
             record.setStatus(employeePhaseStarted ? RecordStatus.EMPLOYEE_DRAFTING : RecordStatus.NOT_STARTED);
-            recordRepo.save(record);
+            newRecords.add(record);
+        }
+        recordRepo.saveAll(newRecords);
 
+        String formattedStartDate = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+                .withZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
+                .format(period.getEmployeeStartDate());
+        for (PeriodEmployee pe : employees) {
             if (employeePhaseStarted) {
                 sendNotification(pe.getEmployee(), "PERIOD_OPENED", String.format("Kỳ đánh giá \"%s\" đã mở. Vui lòng hoàn thành tự đánh giá trước hạn chót.", period.getName()), "/admin/evaluation/my-records");
             } else {
-                String formattedDate = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
-                        .withZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
-                        .format(period.getEmployeeStartDate());
-                sendNotification(pe.getEmployee(), "PERIOD_UPCOMING", String.format("Kỳ đánh giá \"%s\" sắp diễn ra. Cổng tự đánh giá sẽ mở vào lúc %s.", period.getName(), formattedDate), "/admin/evaluation/my-records");
+                sendNotification(pe.getEmployee(), "PERIOD_UPCOMING", String.format("Kỳ đánh giá \"%s\" sắp diễn ra. Cổng tự đánh giá sẽ mở vào lúc %s.", period.getName(), formattedStartDate), "/admin/evaluation/my-records");
             }
         }
 
@@ -807,8 +812,7 @@ public class EvaluationPeriodService {
                 }
                 if (!employeeIds.isEmpty()) {
                     // Gửi thông báo đến nhân viên
-                    for (String empId : employeeIds) {
-                        User employee = userRepo.findById(empId).orElse(null);
+                    for (User employee : userRepo.findAllById(employeeIds)) {
                         sendNotification(employee, "PERIOD_OPENED",
                                 String.format("Kỳ đánh giá \"%s\" đã được điều chỉnh ngày mở cổng và hiện đã mở. Vui lòng hoàn thành tự đánh giá.", period.getName()),
                                 "/admin/evaluation/my-records");
