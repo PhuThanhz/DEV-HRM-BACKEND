@@ -23,7 +23,6 @@ import vn.system.app.modules.companyjobtitle.service.CompanyJobTitleService;
 
 @RestController
 @RequestMapping("/api/v1")
-@CrossOrigin(origins = "*") // Giữ nguyên, có thể thay bằng domain cụ thể sau
 @Validated
 public class CompanyJobTitleController {
 

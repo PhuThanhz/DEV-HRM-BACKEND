@@ -14,8 +14,11 @@ import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.error.IdInvalidException;
 
 import vn.system.app.modules.companysalarygrade.repository.CompanySalaryGradeRepository;
+import vn.system.app.modules.companysalarygrade.service.CompanySalaryGradeService;
 import vn.system.app.modules.departmentsalarygrade.repository.DepartmentSalaryGradeRepository;
+import vn.system.app.modules.departmentsalarygrade.service.DepartmentSalaryGradeService;
 import vn.system.app.modules.sectionsalarygrade.repository.SectionSalaryGradeRepository;
+import vn.system.app.modules.sectionsalarygrade.service.SectionSalaryGradeService;
 
 import vn.system.app.modules.salarystructure.domain.OwnerLevel;
 import vn.system.app.modules.salarystructure.domain.SalaryStructure;
@@ -32,6 +35,26 @@ public class SalaryStructureService {
     private final CompanySalaryGradeRepository companyGradeRepo;
     private final DepartmentSalaryGradeRepository departmentGradeRepo;
     private final SectionSalaryGradeRepository sectionGradeRepo;
+
+    private final CompanySalaryGradeService companySalaryGradeService;
+    private final DepartmentSalaryGradeService departmentSalaryGradeService;
+    private final SectionSalaryGradeService sectionSalaryGradeService;
+
+    // IDOR protection — resolve salaryGradeId theo ownerLevel rồi tái dùng
+    // checkScope tương ứng của CompanySalaryGrade/DepartmentSalaryGrade/SectionSalaryGrade
+    private void checkOwnerScope(OwnerLevel ownerLevel, Long salaryGradeId) {
+        if (ownerLevel == null || salaryGradeId == null) {
+            return;
+        }
+        switch (ownerLevel) {
+            case COMPANY -> companyGradeRepo.findById(salaryGradeId)
+                    .ifPresent(g -> companySalaryGradeService.checkScope(g.getCompanyJobTitleId()));
+            case DEPARTMENT -> departmentGradeRepo.findById(salaryGradeId)
+                    .ifPresent(g -> departmentSalaryGradeService.checkScope(g.getDepartmentJobTitleId()));
+            case SECTION -> sectionGradeRepo.findById(salaryGradeId)
+                    .ifPresent(g -> sectionSalaryGradeService.checkScope(g.getSectionJobTitleId()));
+        }
+    }
 
     /*
      * =====================================================
@@ -145,6 +168,7 @@ public class SalaryStructureService {
     public SalaryStructure upsert(ReqUpsertSalaryStructureDTO req) {
 
         validate(req);
+        checkOwnerScope(req.getOwnerLevel(), req.getSalaryGradeId());
 
         SalaryStructure entity = repo
                 .findByOwnerLevelAndOwnerJobTitleIdAndSalaryGradeId(
@@ -216,6 +240,7 @@ public class SalaryStructureService {
     public ResSalaryStructureDTO findById(Long id) {
         SalaryStructure entity = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy ID"));
+        checkOwnerScope(entity.getOwnerLevel(), entity.getSalaryGradeId());
         return toDTO(entity);
     }
 

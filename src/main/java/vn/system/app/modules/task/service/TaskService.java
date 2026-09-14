@@ -25,6 +25,12 @@ import vn.system.app.modules.department.domain.Department;
 import vn.system.app.modules.department.repository.DepartmentRepository;
 import vn.system.app.modules.jd.jobdescriptiontask.repository.JobDescriptionTaskItemRepository;
 import vn.system.app.modules.jd.jobdescriptiontask.repository.JobDescriptionTaskRepository;
+import vn.system.app.modules.kpigroup.domain.KpiGroup;
+import vn.system.app.modules.kpigroup.domain.enums.KpiOutputType;
+import vn.system.app.modules.kpigroup.domain.enums.KpiTargetDirection;
+import vn.system.app.modules.kpigroup.domain.enums.KpiType;
+import vn.system.app.modules.kpigroup.repository.KpiGroupRepository;
+import vn.system.app.modules.kpigroup.service.KpiCalculationService;
 import vn.system.app.modules.notification.service.NotificationService;
 import vn.system.app.modules.task.domain.*;
 import vn.system.app.modules.task.domain.enums.TaskParticipantRole;
@@ -53,6 +59,8 @@ public class TaskService {
     private final JobDescriptionTaskRepository jobDescriptionTaskRepository;
     private final JobDescriptionTaskItemRepository jobDescriptionTaskItemRepository;
     private final UserPositionRepository userPositionRepository;
+    private final KpiGroupRepository kpiGroupRepository;
+    private final KpiCalculationService kpiCalculationService;
 
     private final TaskCommentService taskCommentService;
     private final TaskChecklistService taskChecklistService;
@@ -75,6 +83,8 @@ public class TaskService {
             JobDescriptionTaskRepository jobDescriptionTaskRepository,
             JobDescriptionTaskItemRepository jobDescriptionTaskItemRepository,
             UserPositionRepository userPositionRepository,
+            KpiGroupRepository kpiGroupRepository,
+            KpiCalculationService kpiCalculationService,
             TaskCommentService taskCommentService,
             TaskChecklistService taskChecklistService,
             TaskAttachmentService taskAttachmentService,
@@ -94,6 +104,8 @@ public class TaskService {
         this.jobDescriptionTaskRepository = jobDescriptionTaskRepository;
         this.jobDescriptionTaskItemRepository = jobDescriptionTaskItemRepository;
         this.userPositionRepository = userPositionRepository;
+        this.kpiGroupRepository = kpiGroupRepository;
+        this.kpiCalculationService = kpiCalculationService;
         this.taskCommentService = taskCommentService;
         this.taskChecklistService = taskChecklistService;
         this.taskAttachmentService = taskAttachmentService;
@@ -187,6 +199,9 @@ public class TaskService {
             targetDepartment = findCreatorDepartment(creator);
         }
 
+        // Validate KPI group reference if provided — phải thuộc đúng công ty của phòng ban task
+        validateKpiGroup(req.getKpiGroupId(), targetDepartment);
+
         // Build & save Task
         Task task = new Task();
         task.setTitle(req.getTitle().trim());
@@ -200,6 +215,12 @@ public class TaskService {
         task.setJobDescriptionTaskId(req.getJobDescriptionTaskId());
         task.setJobDescriptionTaskItemId(req.getJobDescriptionTaskItemId());
         task.setDepartment(targetDepartment);
+        task.setKpiGroupId(req.getKpiGroupId());
+        task.setKpiCycleType(req.getKpiCycleType());
+        task.setKpiTargetDirection(req.getKpiTargetDirection() != null ? req.getKpiTargetDirection() : KpiTargetDirection.INCREASING);
+        task.setKpiOutputType(req.getKpiOutputType() != null ? req.getKpiOutputType() : KpiOutputType.PERCENTAGE);
+        task.setKpiTargetValue(req.getKpiTargetValue());
+        task.setKpiTargetUnit(req.getKpiTargetUnit());
 
         Task savedTask = taskRepository.save(task);
 
@@ -259,9 +280,13 @@ public class TaskService {
         Task task = taskRepository.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Tác vụ không tồn tại với ID: " + id));
 
-        // Rule 8: PUT chặn sửa khi status COMPLETED / CANCELLED
-        if (task.getStatus() == TaskStatus.COMPLETED || task.getStatus() == TaskStatus.CANCELLED) {
-            throw new IdInvalidException("Không thể chỉnh sửa tác vụ đã hoàn thành hoặc đã bị hủy");
+        // Rule 8: PUT chặn sửa khi status PENDING_REVIEW / COMPLETED / CANCELLED — khớp với
+        // canEdit ở FE (chỉ cho sửa lúc TODO/IN_PROGRESS/REWORK), tránh Creator đổi nội dung/
+        // hạn chót "ngầm" trong lúc Assignee đã nộp báo cáo và đang chờ nghiệm thu.
+        if (task.getStatus() == TaskStatus.PENDING_REVIEW
+                || task.getStatus() == TaskStatus.COMPLETED
+                || task.getStatus() == TaskStatus.CANCELLED) {
+            throw new IdInvalidException("Không thể chỉnh sửa tác vụ đang chờ nghiệm thu, đã hoàn thành hoặc đã bị hủy");
         }
 
         // Rule 13: IDOR check — chỉ Creator hoặc Admin được sửa
@@ -337,6 +362,9 @@ public class TaskService {
             task.setDepartment(targetDepartment);
         }
 
+        // Validate KPI group reference if provided — phải thuộc đúng công ty của phòng ban task
+        validateKpiGroup(req.getKpiGroupId(), task.getDepartment());
+
         // Update task attributes
         task.setTitle(req.getTitle().trim());
         task.setDescription(req.getDescription());
@@ -348,6 +376,28 @@ public class TaskService {
         if (req.getEstimatedHours() != null) {
             task.setEstimatedHours(req.getEstimatedHours());
         }
+        task.setKpiGroupId(req.getKpiGroupId());
+        task.setKpiCycleType(req.getKpiCycleType());
+        if (req.getKpiTargetDirection() != null) {
+            task.setKpiTargetDirection(req.getKpiTargetDirection());
+        }
+        if (req.getKpiOutputType() != null) {
+            task.setKpiOutputType(req.getKpiOutputType());
+        }
+        task.setKpiTargetValue(req.getKpiTargetValue());
+        task.setKpiTargetUnit(req.getKpiTargetUnit());
+
+        // Tự động tính lại KPI nếu task có thực đạt
+        if (task.getKpiGroupId() != null && task.getKpiActualValue() != null) {
+            KpiGroup kpiGroup = kpiGroupRepository.findById(task.getKpiGroupId()).orElse(null);
+            if (kpiGroup != null && kpiGroup.getKpiType() == KpiType.RATIO) {
+                KpiTargetDirection dir = task.getKpiTargetDirection() != null ? task.getKpiTargetDirection() : kpiGroup.getTargetDirection();
+                Double ratio = kpiCalculationService.calculateRatio(task.getKpiTargetValue(), task.getKpiActualValue(), dir);
+                task.setKpiResultRatio(ratio);
+                Double points = kpiCalculationService.calculatePoints(ratio, kpiGroup.getScoringScale());
+                task.setKpiScorePoints(points);
+            }
+        }
 
         // If Assignee changed, reset jobDescriptionTaskId + Audit Log + Notify
         if (assigneeChanged) {
@@ -355,7 +405,9 @@ public class TaskService {
             task.setJobDescriptionTaskItemId(null);
             taskCommentService.writeAuditLog(task, actor, "Đã đổi người thực hiện chính thành " + newAssignee.getName() + " (đã gỡ liên kết Nhiệm vụ JD cũ)", null);
             notifyUser(newAssignee.getId(), "TASK_ASSIGNED", actor.getName() + " đã giao cho bạn tác vụ: " + task.getTitle(), "/admin/tasks?taskId=" + task.getId());
-        } else if (req.getJobDescriptionTaskId() != null) {
+        } else {
+            // PUT represents the complete editable state. Assign null explicitly so that
+            // clearing the JD selector in the frontend also removes the persisted link.
             task.setJobDescriptionTaskId(req.getJobDescriptionTaskId());
             task.setJobDescriptionTaskItemId(req.getJobDescriptionTaskItemId());
         }
@@ -469,9 +521,11 @@ public class TaskService {
         Task task = taskRepository.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Tác vụ không tồn tại với ID: " + id));
 
-        // Rule 8: chặn sửa khi status COMPLETED / CANCELLED
-        if (task.getStatus() == TaskStatus.COMPLETED || task.getStatus() == TaskStatus.CANCELLED) {
-            throw new IdInvalidException("Không thể chỉnh sửa tác vụ đã hoàn thành hoặc đã bị hủy");
+        // Rule 8: chặn sửa khi status PENDING_REVIEW / COMPLETED / CANCELLED (đồng bộ với handleUpdate)
+        if (task.getStatus() == TaskStatus.PENDING_REVIEW
+                || task.getStatus() == TaskStatus.COMPLETED
+                || task.getStatus() == TaskStatus.CANCELLED) {
+            throw new IdInvalidException("Không thể chỉnh sửa tác vụ đang chờ nghiệm thu, đã hoàn thành hoặc đã bị hủy");
         }
 
         // Rule 13: IDOR check — chỉ Creator hoặc Admin được sửa
@@ -557,9 +611,32 @@ public class TaskService {
             }
         }
 
+        // Tính kết quả KPI (nếu task thuộc 1 Nhóm KPI và có nhập Thực đạt)
+        if (task.getKpiGroupId() != null && req.getKpiActualValue() != null) {
+            KpiGroup kpiGroup = kpiGroupRepository.findById(task.getKpiGroupId()).orElse(null);
+            if (kpiGroup != null) {
+                task.setKpiActualValue(req.getKpiActualValue());
+                if (kpiGroup.getKpiType() == KpiType.RATIO) {
+                    KpiTargetDirection dir = task.getKpiTargetDirection() != null ? task.getKpiTargetDirection() : kpiGroup.getTargetDirection();
+                    Double ratio = kpiCalculationService.calculateRatio(task.getKpiTargetValue(), req.getKpiActualValue(), dir);
+                    task.setKpiResultRatio(ratio);
+
+                    Double points = kpiCalculationService.calculatePoints(ratio, kpiGroup.getScoringScale());
+                    task.setKpiScorePoints(points);
+                } else {
+                    task.setKpiResultTotal(kpiCalculationService.calculateTieredTotal(kpiGroup, req.getKpiActualValue()));
+                }
+            }
+        }
+
         // Update task status to PENDING_REVIEW
         task.setStatus(TaskStatus.PENDING_REVIEW);
         Task updatedTask = taskRepository.save(task);
+
+        // Tự động từ chối yêu cầu gia hạn còn PENDING (nếu có) vì tác vụ đã rời khỏi
+        // giai đoạn thực hiện — tránh request "mồ côi" bị duyệt nhầm sau khi đã nộp kết quả
+        taskExtensionRequestService.autoRejectPendingExtension(updatedTask,
+                "Tự động từ chối vì tác vụ đã được nộp báo cáo kết quả trước khi yêu cầu được xử lý");
 
         // Audit log
         taskCommentService.writeAuditLog(updatedTask, actor, "Đã nộp báo cáo kết quả hoàn thành tác vụ (Lần nộp thứ " + nextRound + ")", nextRound);
@@ -681,6 +758,32 @@ public class TaskService {
         taskRepository.save(task);
 
         taskCommentService.writeAuditLog(task, actor, "Đã hủy tác vụ", null);
+        notifyTaskCancelled(task, actor);
+    }
+
+    private void notifyTaskCancelled(Task task, User actor) {
+        List<TaskParticipant> participants = taskParticipantRepository.findByTaskId(task.getId());
+        String actorId = actor != null ? actor.getId() : null;
+        List<String> recipientIds = participants.stream()
+                .map(p -> p.getUser().getId())
+                .filter(uid -> !uid.equals(actorId))
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (recipientIds.isEmpty()) {
+            return;
+        }
+        String actorName = actor != null ? actor.getName() : "Người giao việc";
+        try {
+            notificationService.sendNotifications(
+                    recipientIds,
+                    "TASK",
+                    "TASK_CANCELLED",
+                    actorName + " đã hủy tác vụ: " + task.getTitle(),
+                    "/admin/tasks?taskId=" + task.getId());
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo hủy tác vụ {}: {}", task.getId(), e.getMessage());
+        }
     }
 
     /*
@@ -1074,12 +1177,36 @@ public class TaskService {
         if (jobDescriptionTaskItemId == null) {
             return;
         }
+        if (jobDescriptionTaskId == null) {
+            throw new IdInvalidException("Phải chọn Nhiệm vụ JD cha khi chọn mục con");
+        }
         vn.system.app.modules.jd.jobdescriptiontask.domain.JobDescriptionTaskItem item = jobDescriptionTaskItemRepository
                 .findById(jobDescriptionTaskItemId)
                 .orElseThrow(() -> new IdInvalidException("Mục con của Nhiệm vụ JD không tồn tại"));
 
-        if (jobDescriptionTaskId != null && !item.getJobDescriptionTask().getId().equals(jobDescriptionTaskId)) {
+        if (!item.getJobDescriptionTask().getId().equals(jobDescriptionTaskId)) {
             throw new IdInvalidException("Mục con không thuộc Nhiệm vụ JD đã chọn");
+        }
+    }
+
+    private void validateKpiGroup(Long kpiGroupId, Department taskDepartment) {
+        if (kpiGroupId == null) {
+            return;
+        }
+        KpiGroup kpiGroup = kpiGroupRepository.findById(kpiGroupId)
+                .orElseThrow(() -> new IdInvalidException("Nhóm KPI không tồn tại"));
+
+        if (!kpiGroup.isActive()) {
+            throw new IdInvalidException("Nhóm KPI '" + kpiGroup.getName() + "' đã ngưng hoạt động");
+        }
+
+        Long taskCompanyId = taskDepartment != null && taskDepartment.getCompany() != null
+                ? taskDepartment.getCompany().getId()
+                : null;
+        Long kpiGroupCompanyId = kpiGroup.getCompany() != null ? kpiGroup.getCompany().getId() : null;
+
+        if (taskCompanyId == null || !taskCompanyId.equals(kpiGroupCompanyId)) {
+            throw new IdInvalidException("Nhóm KPI '" + kpiGroup.getName() + "' không thuộc công ty của tác vụ này");
         }
     }
 
@@ -1224,11 +1351,24 @@ public class TaskService {
 
     private void notifyAddedParticipants(Task task, User actor, List<User> collaborators, List<User> observers) {
         String actorName = actor != null ? actor.getName() : "Người giao việc";
-        for (User collab : collaborators) {
-            notifyUser(collab.getId(), "TASK_ADDED_AS_COLLABORATOR", actorName + " đã thêm bạn làm Người phối hợp cho tác vụ: " + task.getTitle(), "/admin/tasks?taskId=" + task.getId());
-        }
-        for (User obs : observers) {
-            notifyUser(obs.getId(), "TASK_ADDED_AS_OBSERVER", actorName + " đã thêm bạn làm Người quan sát cho tác vụ: " + task.getTitle(), "/admin/tasks?taskId=" + task.getId());
+        String actionLink = "/admin/tasks?taskId=" + task.getId();
+        try {
+            if (collaborators != null && !collaborators.isEmpty()) {
+                notificationService.sendNotifications(
+                        collaborators.stream().map(User::getId).toList(),
+                        "TASK", "TASK_ADDED_AS_COLLABORATOR",
+                        actorName + " đã thêm bạn làm Người phối hợp cho tác vụ: " + task.getTitle(),
+                        actionLink);
+            }
+            if (observers != null && !observers.isEmpty()) {
+                notificationService.sendNotifications(
+                        observers.stream().map(User::getId).toList(),
+                        "TASK", "TASK_ADDED_AS_OBSERVER",
+                        actorName + " đã thêm bạn làm Người quan sát cho tác vụ: " + task.getTitle(),
+                        actionLink);
+            }
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo thêm người tham gia cho task {}: {}", task.getId(), e.getMessage());
         }
     }
 
@@ -1283,6 +1423,20 @@ public class TaskService {
                 dto.setCompanyName(task.getDepartment().getCompany().getName());
             }
         }
+        dto.setKpiGroupId(task.getKpiGroupId());
+        if (task.getKpiGroupId() != null && task.getKpiGroup() != null) {
+            dto.setKpiGroupName(task.getKpiGroup().getName());
+            dto.setKpiGroupType(task.getKpiGroup().getKpiType());
+        }
+        dto.setKpiTargetDirection(task.getKpiTargetDirection() != null ? task.getKpiTargetDirection() : KpiTargetDirection.INCREASING);
+        dto.setKpiOutputType(task.getKpiOutputType() != null ? task.getKpiOutputType() : KpiOutputType.PERCENTAGE);
+        dto.setKpiCycleType(task.getKpiCycleType());
+        dto.setKpiTargetValue(task.getKpiTargetValue());
+        dto.setKpiTargetUnit(task.getKpiTargetUnit());
+        dto.setKpiActualValue(task.getKpiActualValue());
+        dto.setKpiResultRatio(task.getKpiResultRatio());
+        dto.setKpiScorePoints(task.getKpiScorePoints());
+        dto.setKpiResultTotal(task.getKpiResultTotal());
 
         boolean isOverdue = task.getDueDate() != null
                 && task.getDueDate().isBefore(Instant.now())

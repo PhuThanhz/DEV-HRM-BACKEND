@@ -117,6 +117,6 @@ public class SalaryGradeIncomeController {
         }
 
         service.handleDelete(id);
-        return ResponseEntity.ok(null);
+        return ResponseEntity.noContent().build();
     }
 }

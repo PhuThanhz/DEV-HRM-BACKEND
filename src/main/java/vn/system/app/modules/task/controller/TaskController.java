@@ -19,6 +19,7 @@ import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.annotation.ApiMessage;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.modules.task.domain.Task;
+import vn.system.app.modules.task.domain.enums.KpiCycleType;
 import vn.system.app.modules.task.domain.enums.TaskPriority;
 import vn.system.app.modules.task.domain.enums.TaskStatus;
 import vn.system.app.modules.task.domain.request.ReqApproveTaskDTO;
@@ -243,13 +244,15 @@ public class TaskController {
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "isOnTime", required = false) Boolean isOnTime,
             @RequestParam(value = "createdBy", required = false) String createdBy,
-            @RequestParam(value = "isJdTask", required = false) Boolean isJdTask) {
+            @RequestParam(value = "isJdTask", required = false) Boolean isJdTask,
+            @RequestParam(value = "kpiGroupId", required = false) Long kpiGroupId,
+            @RequestParam(value = "kpiCycleType", required = false) KpiCycleType kpiCycleType) {
 
         java.time.Instant from = parseDateParam(fromStr, false);
         java.time.Instant to = parseDateParam(toStr, true);
 
         return ResponseEntity.ok(
-                this.reportService.generateReport(from, to, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask));
+                this.reportService.generateReport(from, to, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask, kpiGroupId, kpiCycleType));
     }
 
     /*
@@ -269,12 +272,14 @@ public class TaskController {
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "isOnTime", required = false) Boolean isOnTime,
             @RequestParam(value = "createdBy", required = false) String createdBy,
-            @RequestParam(value = "isJdTask", required = false) Boolean isJdTask) {
+            @RequestParam(value = "isJdTask", required = false) Boolean isJdTask,
+            @RequestParam(value = "kpiGroupId", required = false) Long kpiGroupId,
+            @RequestParam(value = "kpiCycleType", required = false) KpiCycleType kpiCycleType) {
 
         java.time.Instant from = parseDateParam(fromStr, false);
         java.time.Instant to = parseDateParam(toStr, true);
 
-        byte[] excelBytes = this.reportService.exportToExcel(from, to, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask);
+        byte[] excelBytes = this.reportService.exportToExcel(from, to, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask, kpiGroupId, kpiCycleType);
 
         return ResponseEntity.ok()
                 .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=Bao_Cao_Tong_Ket_Cong_Viec.xlsx")

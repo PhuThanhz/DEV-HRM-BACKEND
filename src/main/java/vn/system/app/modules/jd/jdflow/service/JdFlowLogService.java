@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.PermissionException;
@@ -71,6 +72,11 @@ public class JdFlowLogService {
         log.setAction(action);
         log.setComment(comment);
         repository.save(log);
+    }
+
+    @Transactional
+    public void deleteByJobDescription(Long jdId) {
+        repository.deleteAll(repository.findByJobDescriptionIdOrderByCreatedAtAsc(jdId));
     }
 
     /*

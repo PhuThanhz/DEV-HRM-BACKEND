@@ -4,8 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import org.springframework.mail.MailException;
-import org.springframework.mail.MailSender;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
@@ -15,28 +13,19 @@ import org.thymeleaf.spring6.SpringTemplateEngine;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 public class EmailService {
 
-    private final MailSender mailSender;
     private final JavaMailSender javaMailSender;
     private final SpringTemplateEngine templateEngine;
 
-    public EmailService(MailSender mailSender,
-            JavaMailSender javaMailSender,
+    public EmailService(JavaMailSender javaMailSender,
             SpringTemplateEngine templateEngine) {
-        this.mailSender = mailSender;
         this.javaMailSender = javaMailSender;
         this.templateEngine = templateEngine;
-    }
-
-    public void sendSimpleEmail() {
-        SimpleMailMessage msg = new SimpleMailMessage();
-        msg.setTo("ads.hoidanit@gmail.com");
-        msg.setSubject("Testing from Spring Boot");
-        msg.setText("Hello World from Spring Boot Email");
-        this.mailSender.send(msg);
     }
 
     public void sendEmailSync(String to, String subject, String content,
@@ -50,7 +39,7 @@ public class EmailService {
             message.setText(content, isHtml);
             this.javaMailSender.send(mimeMessage);
         } catch (MailException | MessagingException e) {
-            System.out.println("ERROR SEND EMAIL: " + e);
+            log.error("Không thể gửi email tới {}: {}", to, e.getMessage());
         }
     }
 
@@ -114,7 +103,7 @@ public class EmailService {
 
             javaMailSender.send(mimeMessage);
         } catch (Exception e) {
-            System.out.println("ERROR SEND SHARE EMAIL: " + e);
+            log.error("Không thể gửi email chia sẻ tới {}: {}", to, e.getMessage());
         }
     }
 }

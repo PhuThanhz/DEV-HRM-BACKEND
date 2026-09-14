@@ -117,10 +117,17 @@ public class JdFlowService {
         String finalComment = comment;
 
         // ✅ Chặn re-route flow đang xử lý: chỉ người đang giữ JD (currentUser)
-        // mới được submit tiếp, trừ trường hợp JD hoàn toàn mới (chưa có flow)
+        // mới được submit tiếp; JD hoàn toàn mới (chưa có flow) thì chỉ người tạo
+        // hoặc Admin mới được gửi duyệt lần đầu, tránh bị người khác chiếm quyền submit
         if (!"REJECTED".equals(jd.getStatus())) {
             JdFlow existingFlowCheck = jdFlowRepository.findByJobDescriptionId(jdId);
-            if (existingFlowCheck != null && existingFlowCheck.getCurrentUser() != null
+            if (existingFlowCheck == null) {
+                UserScopeContext.UserScope scope = UserScopeContext.get();
+                boolean isAdmin = scope != null && (scope.isSuperAdmin() || scope.isAdminLevel());
+                if (!isAdmin && !email.equals(jd.getCreatedBy())) {
+                    throw new RuntimeException("Chỉ người tạo JD mới có quyền gửi duyệt lần đầu");
+                }
+            } else if (existingFlowCheck.getCurrentUser() != null
                     && !fromUser.getId().equals(existingFlowCheck.getCurrentUser().getId())) {
                 throw new RuntimeException("Bạn không phải người đang giữ JD này, không có quyền gửi duyệt");
             }

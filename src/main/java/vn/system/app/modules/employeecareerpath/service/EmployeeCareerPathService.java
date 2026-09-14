@@ -10,11 +10,14 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.modules.careerpath.domain.CareerPath;
 import vn.system.app.modules.careerpathtemplate.domain.CareerPathTemplate;
 import vn.system.app.modules.careerpathtemplate.domain.CareerPathTemplateStep;
 import vn.system.app.modules.careerpathtemplate.service.CareerPathTemplateService;
+import vn.system.app.modules.department.service.DepartmentService;
 import vn.system.app.modules.departmentjobtitle.domain.DepartmentJobTitle;
 import vn.system.app.modules.departmentjobtitle.repository.DepartmentJobTitleRepository;
 import vn.system.app.modules.employeecareerpath.domain.EmployeeCareerPath;
@@ -39,6 +42,7 @@ public class EmployeeCareerPathService {
     private final CareerPathTemplateService templateService;
     private final UserPositionRepository userPositionRepo;
     private final DepartmentJobTitleRepository departmentJobTitleRepo;
+    private final DepartmentService departmentService;
 
     public EmployeeCareerPathService(
             EmployeeCareerPathRepository repo,
@@ -46,13 +50,15 @@ public class EmployeeCareerPathService {
             UserRepository userRepo,
             CareerPathTemplateService templateService,
             UserPositionRepository userPositionRepo,
-            DepartmentJobTitleRepository departmentJobTitleRepo) {
+            DepartmentJobTitleRepository departmentJobTitleRepo,
+            DepartmentService departmentService) {
         this.repo = repo;
         this.historyRepo = historyRepo;
         this.userRepo = userRepo;
         this.templateService = templateService;
         this.userPositionRepo = userPositionRepo;
         this.departmentJobTitleRepo = departmentJobTitleRepo;
+        this.departmentService = departmentService;
     }
 
     // =====================================================
@@ -216,13 +222,38 @@ public class EmployeeCareerPathService {
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy lộ trình nhân viên"));
     }
 
+    // IDOR protection — công ty/phòng ban của nhân viên đích phải nằm trong
+    // phạm vi người gọi
+    private boolean isUserInScope(String targetUserId) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+            return true;
+        }
+        List<Long> targetCompanyIds = userPositionRepo.findActiveCompanyIdsByUserId(targetUserId);
+        List<Long> targetDepartmentIds = userPositionRepo.findActiveDepartmentIdsByUserId(targetUserId);
+
+        boolean allowedByCompany = scope.companyIds() != null
+                && targetCompanyIds.stream().anyMatch(scope.companyIds()::contains);
+        boolean allowedByDepartment = scope.departmentIds() != null
+                && targetDepartmentIds.stream().anyMatch(scope.departmentIds()::contains);
+        return allowedByCompany || allowedByDepartment;
+    }
+
+    private void checkUserScope(String targetUserId) {
+        if (!isUserInScope(targetUserId)) {
+            throw new PermissionException("Bạn không có quyền xem lộ trình thăng tiến của nhân viên này");
+        }
+    }
+
     public ResEmployeeCareerPathDTO fetchByUserId(String userId) {
         EmployeeCareerPath e = repo.findByUser_IdAndActiveTrue(userId)
                 .orElseThrow(() -> new IdInvalidException("Nhân viên chưa có lộ trình thăng tiến"));
+        checkUserScope(userId);
         return convertToResponse(e, true);
     }
 
     public List<ResEmployeeCareerPathDTO> fetchByDepartment(Long departmentId) {
+        departmentService.checkDepartmentScope(departmentService.fetchEntityById(departmentId));
         return repo.findByTemplate_Department_IdAndActiveTrue(departmentId)
                 .stream()
                 .map(e -> convertToResponse(e, false))
@@ -233,6 +264,7 @@ public class EmployeeCareerPathService {
         LocalDate deadline = LocalDate.now().plusDays(withinDays);
 
         return repo.findAllInProgress().stream()
+                .filter(e -> isUserInScope(e.getUser().getId()))
                 .filter(e -> {
                     CareerPathTemplateStep step = e.getTemplate().getSteps().stream()
                             .filter(s -> s.getStepOrder().equals(e.getCurrentStepOrder()))
@@ -261,6 +293,7 @@ public class EmployeeCareerPathService {
     }
 
     public List<ResEmployeeCareerPathHistoryDTO> fetchHistory(String userId) {
+        checkUserScope(userId);
         return historyRepo
                 .findByEmployeeCareerPath_User_IdOrderByPromotedAtDesc(userId)
                 .stream()

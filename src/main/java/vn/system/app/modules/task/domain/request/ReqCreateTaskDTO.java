@@ -9,6 +9,9 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
+import vn.system.app.modules.kpigroup.domain.enums.KpiOutputType;
+import vn.system.app.modules.kpigroup.domain.enums.KpiTargetDirection;
+import vn.system.app.modules.task.domain.enums.KpiCycleType;
 import vn.system.app.modules.task.domain.enums.TaskPriority;
 
 @Getter
@@ -42,4 +45,16 @@ public class ReqCreateTaskDTO {
     private Long jobDescriptionTaskItemId;
 
     private Long departmentId;
+
+    private Long kpiGroupId;
+
+    private KpiCycleType kpiCycleType;
+
+    private KpiTargetDirection kpiTargetDirection;
+
+    private KpiOutputType kpiOutputType;
+
+    private Double kpiTargetValue;
+
+    private String kpiTargetUnit;
 }

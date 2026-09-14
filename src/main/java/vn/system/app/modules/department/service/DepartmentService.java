@@ -142,13 +142,10 @@ public class DepartmentService {
             Specification<Department> spec,
             Pageable pageable) {
 
+        // SUPER_ADMIN, ADMIN_SUB_1 → thấy toàn bộ, không filter (scope null hoặc isAdminLevel)
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope != null && !scope.isAdminLevel()) {
-            if (scope.isAdminLevel()) {
-                // SUPER_ADMIN, ADMIN_SUB_1 → thấy toàn bộ, không filter
-                spec = Specification.where(spec)
-                        .and(ScopeSpec.byCompanyScope("company.id"));
-            } else if (scope.isCompanyLevel()) {
+            if (scope.isCompanyLevel()) {
                 // ADMIN_SUB_2 → thấy toàn bộ phòng ban trong công ty được gán
                 spec = Specification.where(spec)
                         .and(ScopeSpec.byCompanyScope("company.id"));

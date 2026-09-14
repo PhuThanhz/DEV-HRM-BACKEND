@@ -12,7 +12,11 @@ import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.annotation.ApiMessage;
 import vn.system.app.common.util.error.IdInvalidException;
 
+import jakarta.validation.Valid;
+
 import vn.system.app.modules.jobpositionchart.domain.JobPositionChart;
+import vn.system.app.modules.jobpositionchart.domain.request.ReqCreateJobPositionChartDTO;
+import vn.system.app.modules.jobpositionchart.domain.request.ReqUpdateJobPositionChartDTO;
 import vn.system.app.modules.jobpositionchart.domain.response.ResJobPositionChartDTO;
 import vn.system.app.modules.jobpositionchart.service.JobPositionChartService;
 
@@ -33,9 +37,9 @@ public class JobPositionChartController {
      */
     @PostMapping("/job-position-charts")
     @ApiMessage("Create job position chart")
-    public ResponseEntity<ResJobPositionChartDTO> createChart(@RequestBody JobPositionChart chart) {
+    public ResponseEntity<ResJobPositionChartDTO> createChart(@Valid @RequestBody ReqCreateJobPositionChartDTO req) {
 
-        JobPositionChart created = this.chartService.handleCreateChart(chart);
+        JobPositionChart created = this.chartService.handleCreateChart(req);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(this.chartService.convertToDTO(created));
@@ -102,13 +106,13 @@ public class JobPositionChartController {
      */
     @PutMapping("/job-position-charts")
     @ApiMessage("Update job position chart")
-    public ResponseEntity<ResJobPositionChartDTO> updateChart(@RequestBody JobPositionChart chart)
+    public ResponseEntity<ResJobPositionChartDTO> updateChart(@Valid @RequestBody ReqUpdateJobPositionChartDTO req)
             throws IdInvalidException {
 
-        JobPositionChart updated = this.chartService.handleUpdateChart(chart);
+        JobPositionChart updated = this.chartService.handleUpdateChart(req);
 
         if (updated == null) {
-            throw new IdInvalidException("Chart với id = " + chart.getId() + " không tồn tại");
+            throw new IdInvalidException("Chart với id = " + req.getId() + " không tồn tại");
         }
 
         return ResponseEntity.ok(this.chartService.convertToDTO(updated));

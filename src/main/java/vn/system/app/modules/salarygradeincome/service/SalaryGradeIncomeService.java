@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.modules.salarygrade.domain.SalaryGrade;
 import vn.system.app.modules.salarygrade.repository.SalaryGradeRepository;
+import vn.system.app.modules.salarygrade.service.SalaryGradeService;
 import vn.system.app.modules.salarygradeincome.domain.PayType;
 import vn.system.app.modules.salarygradeincome.domain.SalaryGradeIncome;
 import vn.system.app.modules.salarygradeincome.domain.request.SalaryGradeIncomeRequest;
@@ -18,12 +19,19 @@ public class SalaryGradeIncomeService {
 
     private final SalaryGradeIncomeRepository repository;
     private final SalaryGradeRepository salaryGradeRepository;
+    private final SalaryGradeService salaryGradeService;
 
     public SalaryGradeIncomeService(
             SalaryGradeIncomeRepository repository,
-            SalaryGradeRepository salaryGradeRepository) {
+            SalaryGradeRepository salaryGradeRepository,
+            SalaryGradeService salaryGradeService) {
         this.repository = repository;
         this.salaryGradeRepository = salaryGradeRepository;
+        this.salaryGradeService = salaryGradeService;
+    }
+
+    private void checkScope(SalaryGrade salaryGrade) {
+        salaryGradeService.checkContextScope(salaryGrade.getContextType(), salaryGrade.getContextId());
     }
 
     /*
@@ -43,6 +51,7 @@ public class SalaryGradeIncomeService {
         SalaryGrade salaryGrade = salaryGradeRepository
                 .findById(request.getSalaryGradeId())
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy bậc lương"));
+        checkScope(salaryGrade);
 
         SalaryGradeIncome entity = new SalaryGradeIncome();
         entity.setSalaryGrade(salaryGrade);
@@ -72,6 +81,7 @@ public class SalaryGradeIncomeService {
      */
     public SalaryGradeIncome fetchById(Long id) {
         Optional<SalaryGradeIncome> optional = repository.findById(id);
+        optional.ifPresent(entity -> checkScope(entity.getSalaryGrade()));
         return optional.orElse(null);
     }
 
@@ -84,6 +94,7 @@ public class SalaryGradeIncomeService {
             Long salaryGradeId, PayType payType) {
 
         Optional<SalaryGradeIncome> optional = repository.findBySalaryGrade_IdAndPayType(salaryGradeId, payType);
+        optional.ifPresent(entity -> checkScope(entity.getSalaryGrade()));
 
         return optional.orElse(null);
     }
@@ -126,6 +137,10 @@ public class SalaryGradeIncomeService {
      * ===============================
      */
     public void handleDelete(Long id) {
+        SalaryGradeIncome entity = this.fetchById(id);
+        if (entity == null) {
+            throw new IdInvalidException("Khung thu nhập với id = " + id + " không tồn tại");
+        }
         repository.deleteById(id);
     }
 

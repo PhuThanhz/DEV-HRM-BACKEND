@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.modules.employee.domain.request.ReqCreateEmployeeDTO;
 import vn.system.app.modules.employee.domain.request.ReqUpdateEmployeeDTO;
 import vn.system.app.modules.employee.domain.response.ResCreateEmployeeDTO;
@@ -91,12 +92,36 @@ public class EmployeeService {
     }
 
     // ======================================================
+    // SCOPE CHECK (IDOR protection — công ty/phòng ban của nhân viên đích
+    // phải nằm trong phạm vi công ty/phòng ban mà người gọi được thấy)
+    // ======================================================
+    private void checkUserScope(String targetUserId) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+            return;
+        }
+
+        List<Long> targetCompanyIds = userPositionRepository.findActiveCompanyIdsByUserId(targetUserId);
+        List<Long> targetDepartmentIds = userPositionRepository.findActiveDepartmentIdsByUserId(targetUserId);
+
+        boolean allowedByCompany = scope.companyIds() != null
+                && targetCompanyIds.stream().anyMatch(scope.companyIds()::contains);
+        boolean allowedByDepartment = scope.departmentIds() != null
+                && targetDepartmentIds.stream().anyMatch(scope.departmentIds()::contains);
+
+        if (!allowedByCompany && !allowedByDepartment) {
+            throw new PermissionException("Bạn không có quyền thao tác trên nhân viên này");
+        }
+    }
+
+    // ======================================================
     // UPDATE EMPLOYEE
     // ======================================================
     public ResUpdateEmployeeDTO update(ReqUpdateEmployeeDTO req) {
 
         User user = userRepository.findById(req.getId())
                 .orElseThrow(() -> new IdInvalidException("User không tồn tại"));
+        checkUserScope(user.getId());
 
         // ===== USER =====
         if (req.getName() != null) {
@@ -154,6 +179,7 @@ public class EmployeeService {
         if (!userRepository.existsById(id)) {
             throw new IdInvalidException("User không tồn tại");
         }
+        checkUserScope(id);
         userRepository.deleteById(id);
     }
 
@@ -167,6 +193,7 @@ public class EmployeeService {
         if (user == null) {
             throw new IdInvalidException("User không tồn tại");
         }
+        checkUserScope(id);
 
         return mapToDTO(user);
     }

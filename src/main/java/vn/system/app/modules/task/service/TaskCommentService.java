@@ -3,14 +3,18 @@ package vn.system.app.modules.task.service;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import vn.system.app.common.util.SecurityUtil;
 import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.modules.notification.service.NotificationService;
 import vn.system.app.modules.task.domain.Task;
 import vn.system.app.modules.task.domain.TaskComment;
+import vn.system.app.modules.task.domain.TaskParticipant;
 import vn.system.app.modules.task.domain.enums.TaskCommentType;
 import vn.system.app.modules.task.domain.enums.TaskParticipantRole;
 import vn.system.app.modules.task.domain.request.ReqCreateCommentDTO;
@@ -24,23 +28,28 @@ import vn.system.app.modules.user.repository.UserRepository;
 @Service
 public class TaskCommentService {
 
+    private static final Logger log = LoggerFactory.getLogger(TaskCommentService.class);
+
     private final TaskCommentRepository commentRepository;
     private final TaskRepository taskRepository;
     private final TaskParticipantRepository participantRepository;
     private final UserRepository userRepository;
     private final TaskAccessService taskAccessService;
+    private final NotificationService notificationService;
 
     public TaskCommentService(
             TaskCommentRepository commentRepository,
             TaskRepository taskRepository,
             TaskParticipantRepository participantRepository,
             UserRepository userRepository,
-            TaskAccessService taskAccessService) {
+            TaskAccessService taskAccessService,
+            NotificationService notificationService) {
         this.commentRepository = commentRepository;
         this.taskRepository = taskRepository;
         this.participantRepository = participantRepository;
         this.userRepository = userRepository;
         this.taskAccessService = taskAccessService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -76,7 +85,31 @@ public class TaskCommentService {
         comment.setType(TaskCommentType.COMMENT);
 
         TaskComment saved = commentRepository.save(comment);
+        notifyNewComment(task, actor, currentUserId);
         return convertToResDTO(saved);
+    }
+
+    private void notifyNewComment(Task task, User actor, String actorId) {
+        List<TaskParticipant> participants = participantRepository.findByTaskId(task.getId());
+        List<String> recipientIds = participants.stream()
+                .map(p -> p.getUser().getId())
+                .filter(uid -> !uid.equals(actorId))
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (recipientIds.isEmpty()) {
+            return;
+        }
+        try {
+            notificationService.sendNotifications(
+                    recipientIds,
+                    "TASK",
+                    "TASK_COMMENT_ADDED",
+                    actor.getName() + " đã bình luận trong tác vụ: " + task.getTitle(),
+                    "/admin/tasks?taskId=" + task.getId());
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo bình luận mới cho task {}: {}", task.getId(), e.getMessage());
+        }
     }
 
     @Transactional

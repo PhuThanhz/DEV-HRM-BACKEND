@@ -393,7 +393,11 @@ public class ConfidentialProcedureService {
     // FETCH BY COMPANY / DEPARTMENT / SECTION
     // =====================================================
     public List<ResConfidentialProcedureDTO> fetchByCompany(Long companyId) {
-        return repository.findByDepartment_Company_Id(companyId)
+        Specification<ConfidentialProcedure> spec = (root, query, cb) -> cb.equal(
+                root.get("department").get("company").get("id"), companyId);
+        spec = spec.and(ScopeSpec.byCompanyScope("department.company.id"));
+        spec = spec.and(filterByCurrentUser());
+        return repository.findAll(spec)
                 .stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 

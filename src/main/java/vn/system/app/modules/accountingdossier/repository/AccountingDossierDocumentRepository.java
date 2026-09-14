@@ -38,6 +38,8 @@ public interface AccountingDossierDocumentRepository extends JpaRepository<Accou
 
     List<AccountingDossierDocument> findByIdInAndDossierIdAndActiveTrue(List<Long> ids, Long dossierId);
 
+    java.util.Optional<AccountingDossierDocument> findFirstByFileUrl(String fileUrl);
+
     @Query("""
         SELECT d FROM AccountingDossierDocument d
         WHERE d.active = true

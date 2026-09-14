@@ -121,6 +121,10 @@ public class PermissionAssignmentService {
 
                 DepartmentJobTitle djt = djtService.fetchDepartmentJobTitleById(req.getDepartmentJobTitleId());
 
+                if (!content.getCategory().getDepartment().getId().equals(djt.getDepartment().getId())) {
+                        throw new IdInvalidException("Chức danh không thuộc phòng ban của danh mục quyền này");
+                }
+
                 ProcessAction action = processActionService.fetchEntityById(req.getProcessActionId());
 
                 // DELETE OLD

@@ -37,6 +37,8 @@ public interface JobDescriptionRepository
 
     List<JobDescription> findByStatus(String status);
 
+    List<JobDescription> findByStatusAndCompany_IdIn(String status, List<Long> companyIds);
+
     List<JobDescription> findByDepartmentId(Long departmentId);
 
     List<JobDescription> findByCreatedByAndStatus(String createdBy, String status);

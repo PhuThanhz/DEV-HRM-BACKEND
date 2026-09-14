@@ -77,6 +77,8 @@ public class PositionService {
             section = sectionService.fetchEntityById(dto.getSectionId());
         }
 
+        checkScope(company, department, section);
+
         JobTitle jobTitle = jobTitleService.fetchEntityById(dto.getJobTitleId());
 
         validateJobTitleLevel(company, department, section, jobTitle);
@@ -94,6 +96,19 @@ public class PositionService {
         }
 
         return repo.save(p);
+    }
+
+    // =======================================
+    // SCOPE CHECK (IDOR protection)
+    // =======================================
+    private void checkScope(Company company, Department department, Section section) {
+        if (section != null) {
+            departmentService.checkDepartmentScope(section.getDepartment());
+        } else if (department != null) {
+            departmentService.checkDepartmentScope(department);
+        } else {
+            companyService.checkCompanyScope(company.getId());
+        }
     }
 
     // =======================================
@@ -133,8 +148,10 @@ public class PositionService {
     // FETCH ENTITY
     // =======================================
     public Position fetchEntity(Long id) {
-        return repo.findById(id)
+        Position p = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy Position id = " + id));
+        checkScope(p.getCompany(), p.getDepartment(), p.getSection());
+        return p;
     }
 
     // =======================================

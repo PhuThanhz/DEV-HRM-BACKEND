@@ -7,6 +7,7 @@ import java.util.List;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 
 import vn.system.app.common.util.SecurityUtil;
 import vn.system.app.modules.careerpathtemplate.domain.CareerPathTemplate;
@@ -55,6 +56,7 @@ public class EmployeeCareerPath {
 
     @OneToMany(mappedBy = "employeeCareerPath", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @OrderBy("promotedAt DESC")
+    @BatchSize(size = 20)
     private List<EmployeeCareerPathHistory> histories;
 
     private Instant createdAt;

@@ -69,7 +69,7 @@ public class PublicProcedureViewService {
         String attemptKey = token + ":" + ip;
         ensurePinAttemptAllowed(attemptKey);
 
-        if (pin == null || !pin.equals(shareToken.getPin())) {
+        if (pin == null || shareToken.getPin() == null || !constantTimeEquals(pin, shareToken.getPin())) {
             recordFailedPinAttempt(attemptKey);
             throw new IdInvalidException("Mã PIN không đúng");
         }
@@ -78,6 +78,13 @@ public class PublicProcedureViewService {
         checkActiveStatus(shareToken);
         shareTokenService.recordAccess(shareToken, ip, userAgent);
         return buildPublicDTO(shareToken);
+    }
+
+    // So sánh constant-time để tránh timing attack khi dò PIN
+    private boolean constantTimeEquals(String a, String b) {
+        return java.security.MessageDigest.isEqual(
+                a.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                b.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private void checkActiveStatus(ProcedureShareToken shareToken) {

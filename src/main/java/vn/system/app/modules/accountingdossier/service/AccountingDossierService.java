@@ -975,6 +975,32 @@ public class AccountingDossierService {
         validateCompanyScope(dossier.getCompany().getId());
     }
 
+    // Dùng bởi FileController.canAccessFile — null = file không thuộc chứng từ kế toán
+    // nào (bỏ qua, để FileController thử mắt xích tiếp theo), true/false = quyết định.
+    public Boolean checkAccessIfDossierFile(String fileName) {
+        AccountingDossier dossier = documentItemRepository.findFirstByFileUrl(fileName)
+                .map(AccountingDossierDocument::getDossier)
+                .orElseGet(() -> documentVersionRepository.findFirstByFileUrl(fileName)
+                        .map(v -> v.getDossierDocument() != null ? v.getDossierDocument().getDossier() : null)
+                        .orElse(null));
+
+        if (dossier == null) {
+            return null;
+        }
+
+        String email = SecurityUtil.getCurrentUserLogin().orElse(null);
+        if (email == null) {
+            return false;
+        }
+
+        try {
+            assertCanReadDossier(dossier, resolveActionUser(email));
+            return true;
+        } catch (PermissionException e) {
+            return false;
+        }
+    }
+
     private Long resolveAndValidateReportCompanyId(Long companyId) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {

@@ -14,7 +14,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import vn.system.app.common.response.ResultPaginationDTO;
+import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.modules.companyjobtitle.repository.CompanyJobTitleRepository;
 import vn.system.app.modules.departmentjobtitle.repository.DepartmentJobTitleRepository;
 import vn.system.app.modules.sectionjobtitle.repository.SectionJobTitleRepository;
@@ -50,6 +52,7 @@ public class SalaryGradeService {
     @Transactional
     public ResSalaryGradeDTO handleCreate(ReqCreateSalaryGradeDTO req) {
         validateContext(req.getContextType(), req.getContextId());
+        checkContextScope(req.getContextType(), req.getContextId());
 
         if (req.getGradeLevel() == null || req.getGradeLevel() <= 0) {
             throw new IdInvalidException("GradeLevel phải là số nguyên dương");
@@ -75,6 +78,7 @@ public class SalaryGradeService {
     @Transactional
     public void handleDelete(Long id) {
         SalaryGrade sg = fetchEntityById(id);
+        checkContextScope(sg.getContextType(), sg.getContextId());
         if (!sg.isActive()) {
             throw new IdInvalidException("Bậc lương đã bị vô hiệu hóa");
         }
@@ -97,6 +101,7 @@ public class SalaryGradeService {
 
 
         validateContext(contextType, contextId);
+        checkContextScope(contextType, contextId);
 
         // JPQL native - an toàn và rõ ràng
         String jpql = "SELECT s FROM SalaryGrade s " +
@@ -166,6 +171,50 @@ public class SalaryGradeService {
                         .collect(Collectors.toList()));
 
         return rs;
+    }
+
+    // SCOPE CHECK (IDOR protection — contextId trỏ tới company_job_titles /
+    // department_job_titles / section_job_titles, cần resolve về company/department
+    // thực tế rồi so với phạm vi người gọi trước khi cho đọc/sửa dữ liệu lương)
+    public void checkContextScope(String contextType, Long contextId) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+            return;
+        }
+
+        Long companyId = null;
+        Long departmentId = null;
+
+        if ("COMPANY".equals(contextType)) {
+            companyId = companyJobTitleRepo.findById(contextId)
+                    .map(cjt -> cjt.getCompany().getId())
+                    .orElse(null);
+        } else if ("DEPARTMENT".equals(contextType)) {
+            var djt = departmentJobTitleRepo.findById(contextId).orElse(null);
+            if (djt != null && djt.getDepartment() != null) {
+                departmentId = djt.getDepartment().getId();
+                companyId = djt.getDepartment().getCompany() != null
+                        ? djt.getDepartment().getCompany().getId()
+                        : null;
+            }
+        } else if ("SECTION".equals(contextType)) {
+            var sjt = sectionJobTitleRepo.findById(contextId).orElse(null);
+            if (sjt != null && sjt.getSection() != null && sjt.getSection().getDepartment() != null) {
+                departmentId = sjt.getSection().getDepartment().getId();
+                companyId = sjt.getSection().getDepartment().getCompany() != null
+                        ? sjt.getSection().getDepartment().getCompany().getId()
+                        : null;
+            }
+        }
+
+        boolean allowedByCompany = companyId != null && scope.companyIds() != null
+                && scope.companyIds().contains(companyId);
+        boolean allowedByDepartment = departmentId != null && scope.departmentIds() != null
+                && scope.departmentIds().contains(departmentId);
+
+        if (!allowedByCompany && !allowedByDepartment) {
+            throw new PermissionException("Bạn không có quyền thao tác trên dữ liệu lương này");
+        }
     }
 
     // VALIDATE CONTEXT

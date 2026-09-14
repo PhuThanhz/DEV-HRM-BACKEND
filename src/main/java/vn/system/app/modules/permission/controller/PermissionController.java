@@ -18,6 +18,8 @@ import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.annotation.ApiMessage;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.modules.permission.domain.Permission;
+import vn.system.app.modules.permission.domain.request.ReqCreatePermissionDTO;
+import vn.system.app.modules.permission.domain.request.ReqUpdatePermissionDTO;
 import vn.system.app.modules.permission.service.PermissionService;
 
 @RestController
@@ -32,34 +34,34 @@ public class PermissionController {
 
     @PostMapping("/permissions")
     @ApiMessage("Create a permission")
-    public ResponseEntity<Permission> create(@Valid @RequestBody Permission p) throws IdInvalidException {
+    public ResponseEntity<Permission> create(@Valid @RequestBody ReqCreatePermissionDTO req) throws IdInvalidException {
         // check exist
-        if (this.permissionService.isPermissionExist(p)) {
+        if (this.permissionService.isPermissionExist(req.getModule(), req.getApiPath(), req.getMethod())) {
             throw new IdInvalidException("Permission đã tồn tại.");
         }
 
         // create new permission
-        return ResponseEntity.status(HttpStatus.CREATED).body(this.permissionService.create(p));
+        return ResponseEntity.status(HttpStatus.CREATED).body(this.permissionService.create(req));
     }
 
     @PutMapping("/permissions")
     @ApiMessage("Update a permission")
-    public ResponseEntity<Permission> update(@Valid @RequestBody Permission p) throws IdInvalidException {
+    public ResponseEntity<Permission> update(@Valid @RequestBody ReqUpdatePermissionDTO req) throws IdInvalidException {
         // check exist by id
-        if (this.permissionService.fetchById(p.getId()) == null) {
-            throw new IdInvalidException("Permission với id = " + p.getId() + " không tồn tại.");
+        if (this.permissionService.fetchById(req.getId()) == null) {
+            throw new IdInvalidException("Permission với id = " + req.getId() + " không tồn tại.");
         }
 
         // check exist by module, apiPath and method
-        if (this.permissionService.isPermissionExist(p)) {
+        if (this.permissionService.isPermissionExist(req.getModule(), req.getApiPath(), req.getMethod())) {
             // check name
-            if (this.permissionService.isSameName(p)) {
+            if (this.permissionService.isSameName(req.getId(), req.getName())) {
                 throw new IdInvalidException("Permission đã tồn tại.");
             }
         }
 
         // update permission
-        return ResponseEntity.ok().body(this.permissionService.update(p));
+        return ResponseEntity.ok().body(this.permissionService.update(req));
     }
 
     @DeleteMapping("/permissions/{id}")

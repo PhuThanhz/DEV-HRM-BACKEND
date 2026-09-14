@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import vn.system.app.common.util.SecurityUtil;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.modules.department.domain.Department;
+import vn.system.app.modules.department.service.DepartmentService;
 import vn.system.app.modules.departmentjobtitle.repository.DepartmentJobTitleRepository;
 import vn.system.app.modules.departmentsalarygrade.domain.DepartmentSalaryGrade;
 import vn.system.app.modules.departmentsalarygrade.domain.request.*;
@@ -24,6 +26,7 @@ public class DepartmentSalaryGradeService {
 
     private final DepartmentSalaryGradeRepository repo;
     private final DepartmentJobTitleRepository deptJobTitleRepo;
+    private final DepartmentService departmentService;
     private final UserRepository userRepo;
     private final UserPositionRepository userPositionRepo;
 
@@ -31,6 +34,17 @@ public class DepartmentSalaryGradeService {
         if (grade == null || grade <= 0) {
             throw new IdInvalidException("gradeLevel phải > 0");
         }
+    }
+
+    // IDOR protection — departmentJobTitleId phải thuộc phòng ban trong phạm vi người gọi
+    public void checkScope(Long departmentJobTitleId) {
+        Department dept = deptJobTitleRepo.findById(departmentJobTitleId)
+                .map(djt -> djt.getDepartment())
+                .orElse(null);
+        if (dept == null) {
+            throw new IdInvalidException("DepartmentJobTitle ID không tồn tại");
+        }
+        departmentService.checkDepartmentScope(dept);
     }
 
     // ============================================================
@@ -43,6 +57,7 @@ public class DepartmentSalaryGradeService {
         if (!deptJobTitleRepo.existsById(req.getDepartmentJobTitleId())) {
             throw new IdInvalidException("DepartmentJobTitle ID không tồn tại");
         }
+        checkScope(req.getDepartmentJobTitleId());
 
         if (repo.existsByDepartmentJobTitleIdAndGradeLevel(
                 req.getDepartmentJobTitleId(), req.getGradeLevel())) {
@@ -65,6 +80,7 @@ public class DepartmentSalaryGradeService {
 
         DepartmentSalaryGrade sg = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy ID"));
+        checkScope(sg.getDepartmentJobTitleId());
 
         if (!sg.isActive()) {
             throw new IdInvalidException("Bậc lương đã bị vô hiệu");
@@ -88,6 +104,7 @@ public class DepartmentSalaryGradeService {
     public void delete(Long id) {
         DepartmentSalaryGrade sg = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy ID"));
+        checkScope(sg.getDepartmentJobTitleId());
 
         if (!sg.isActive()) {
             throw new IdInvalidException("Bậc lương đã bị vô hiệu trước đó");
@@ -104,6 +121,7 @@ public class DepartmentSalaryGradeService {
     public ResDepartmentSalaryGradeDTO restore(Long id) {
         DepartmentSalaryGrade sg = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy ID"));
+        checkScope(sg.getDepartmentJobTitleId());
 
         if (sg.isActive()) {
             throw new IdInvalidException("Bậc lương đang hoạt động");
@@ -120,6 +138,7 @@ public class DepartmentSalaryGradeService {
         if (deptJobTitleId == null || deptJobTitleId <= 0) {
             throw new IdInvalidException("departmentJobTitleId không hợp lệ");
         }
+        checkScope(deptJobTitleId);
 
         return repo.findByDepartmentJobTitleIdOrderByGradeLevelAsc(deptJobTitleId)
                 .stream()

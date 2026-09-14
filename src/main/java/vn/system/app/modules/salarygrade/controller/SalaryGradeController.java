@@ -22,7 +22,6 @@ import vn.system.app.modules.salarygrade.service.SalaryGradeService;
 
 @RestController
 @RequestMapping("/api/v1/salary-grades")
-@CrossOrigin(origins = "*")
 @Validated
 public class SalaryGradeController {
 

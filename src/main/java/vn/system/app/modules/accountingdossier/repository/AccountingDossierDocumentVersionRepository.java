@@ -8,4 +8,6 @@ import vn.system.app.modules.accountingdossier.domain.AccountingDossierDocumentV
 @Repository
 public interface AccountingDossierDocumentVersionRepository extends JpaRepository<AccountingDossierDocumentVersion, Long> {
     long countByDossierDocumentId(Long dossierDocumentId);
+
+    java.util.Optional<AccountingDossierDocumentVersion> findFirstByFileUrl(String fileUrl);
 }

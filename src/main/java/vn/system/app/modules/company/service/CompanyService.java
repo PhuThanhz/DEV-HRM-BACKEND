@@ -32,7 +32,7 @@ public class CompanyService {
         this.companyRepository = companyRepository;
     }
 
-    private void checkCompanyScope(Long companyId) {
+    public void checkCompanyScope(Long companyId) {
         UserScopeContext.UserScope scope = UserScopeContext.get();
         if (scope != null && !scope.isAdminLevel()) {
             if (!scope.companyIds().contains(companyId)) {

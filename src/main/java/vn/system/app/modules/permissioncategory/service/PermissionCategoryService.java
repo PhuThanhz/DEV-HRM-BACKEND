@@ -6,11 +6,13 @@ import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import jakarta.transaction.Transactional;
 
 import vn.system.app.common.response.ResultPaginationDTO;
+import vn.system.app.common.util.ScopeSpec;
 import vn.system.app.common.util.error.IdInvalidException;
 
 import vn.system.app.modules.department.service.DepartmentService;
@@ -44,6 +46,7 @@ public class PermissionCategoryService {
         }
 
         var department = departmentService.fetchEntityById(req.getDepartmentId());
+        departmentService.checkDepartmentScope(department);
 
         PermissionCategory entity = new PermissionCategory();
         entity.setCode(req.getCode());
@@ -100,7 +103,9 @@ public class PermissionCategoryService {
         if (optional.isEmpty()) {
             throw new IdInvalidException("Danh mục phân quyền với id = " + id + " không tồn tại");
         }
-        return optional.get();
+        PermissionCategory entity = optional.get();
+        departmentService.checkDepartmentScope(entity.getDepartment());
+        return entity;
     }
 
     // =====================================================
@@ -108,7 +113,9 @@ public class PermissionCategoryService {
     // =====================================================
     public ResultPaginationDTO fetchAllCategory(Pageable pageable) {
 
-        Page<PermissionCategory> page = repository.findAll(pageable);
+        Specification<PermissionCategory> spec = ScopeSpec.byCompanyOrDepartmentScope(
+                "department.company.id", "department.id");
+        Page<PermissionCategory> page = repository.findAll(spec, pageable);
 
         ResultPaginationDTO rs = new ResultPaginationDTO();
         ResultPaginationDTO.Meta meta = new ResultPaginationDTO.Meta();
@@ -133,6 +140,8 @@ public class PermissionCategoryService {
     // ⭐ LẤY CATEGORY THEO PHÒNG BAN
     // =====================================================
     public List<PermissionCategoryResponse> fetchCategoriesByDepartment(Long departmentId) {
+
+        departmentService.checkDepartmentScope(departmentService.fetchEntityById(departmentId));
 
         var list = repository.findByDepartmentId(departmentId);
 

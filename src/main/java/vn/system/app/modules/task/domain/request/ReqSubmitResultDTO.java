@@ -21,6 +21,9 @@ public class ReqSubmitResultDTO {
 
     private List<AttachmentInput> attachments;
 
+    /** Thực đạt (hoặc Thực đạt sản lượng) — chỉ có ý nghĩa khi task thuộc 1 Nhóm KPI. */
+    private Double kpiActualValue;
+
     @Getter
     @Setter
     public static class AttachmentInput {

@@ -61,10 +61,32 @@ public class UserAdminScopeService {
     @Transactional(readOnly = true)
     public List<ResUserAdminScopeDTO> fetchByUser(String userId) {
         ensureUserExists(userId);
+        checkTargetUserScope(userId);
         return repo.findByUser_IdAndActiveTrue(userId)
                 .stream()
                 .map(this::toDTO)
                 .collect(Collectors.toList());
+    }
+
+    // IDOR protection — chỉ xem được phạm vi quản trị của user thuộc
+    // công ty/phòng ban trong phạm vi người gọi
+    private void checkTargetUserScope(String targetUserId) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+            return;
+        }
+
+        List<Long> targetCompanyIds = userPositionRepo.findActiveCompanyIdsByUserId(targetUserId);
+        List<Long> targetDepartmentIds = userPositionRepo.findActiveDepartmentIdsByUserId(targetUserId);
+
+        boolean allowedByCompany = scope.companyIds() != null
+                && targetCompanyIds.stream().anyMatch(scope.companyIds()::contains);
+        boolean allowedByDepartment = scope.departmentIds() != null
+                && targetDepartmentIds.stream().anyMatch(scope.departmentIds()::contains);
+
+        if (!allowedByCompany && !allowedByDepartment) {
+            throw new PermissionException("Bạn không có quyền xem phạm vi quản trị của user này");
+        }
     }
 
     @Transactional

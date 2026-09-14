@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.modules.permission.domain.Permission;
+import vn.system.app.modules.permission.domain.request.ReqCreatePermissionDTO;
+import vn.system.app.modules.permission.domain.request.ReqUpdatePermissionDTO;
 import vn.system.app.modules.permission.repository.PermissionRepository;
 
 @Service
@@ -19,11 +21,8 @@ public class PermissionService {
         this.permissionRepository = permissionRepository;
     }
 
-    public boolean isPermissionExist(Permission p) {
-        return permissionRepository.existsByModuleAndApiPathAndMethod(
-                p.getModule(),
-                p.getApiPath(),
-                p.getMethod());
+    public boolean isPermissionExist(String module, String apiPath, String method) {
+        return permissionRepository.existsByModuleAndApiPathAndMethod(module, apiPath, method);
     }
 
     public Permission fetchById(long id) {
@@ -33,17 +32,24 @@ public class PermissionService {
         return null;
     }
 
-    public Permission create(Permission p) {
+    // Nhận DTO thay vì entity — tránh mass-assignment id (client không thể tự chọn
+    // id để merge đè lên permission có sẵn khi tạo mới)
+    public Permission create(ReqCreatePermissionDTO req) {
+        Permission p = new Permission();
+        p.setName(req.getName());
+        p.setApiPath(req.getApiPath());
+        p.setMethod(req.getMethod());
+        p.setModule(req.getModule());
         return this.permissionRepository.save(p);
     }
 
-    public Permission update(Permission p) {
-        Permission permissionDB = this.fetchById(p.getId());
+    public Permission update(ReqUpdatePermissionDTO req) {
+        Permission permissionDB = this.fetchById(req.getId());
         if (permissionDB != null) {
-            permissionDB.setName(p.getName());
-            permissionDB.setApiPath(p.getApiPath());
-            permissionDB.setMethod(p.getMethod());
-            permissionDB.setModule(p.getModule());
+            permissionDB.setName(req.getName());
+            permissionDB.setApiPath(req.getApiPath());
+            permissionDB.setMethod(req.getMethod());
+            permissionDB.setModule(req.getModule());
 
             // update
             permissionDB = this.permissionRepository.save(permissionDB);
@@ -78,10 +84,10 @@ public class PermissionService {
         return rs;
     }
 
-    public boolean isSameName(Permission p) {
-        Permission permissionDB = this.fetchById(p.getId());
+    public boolean isSameName(long id, String name) {
+        Permission permissionDB = this.fetchById(id);
         if (permissionDB != null) {
-            if (permissionDB.getName().equals(p.getName()))
+            if (permissionDB.getName().equals(name))
                 return true;
         }
         return false;

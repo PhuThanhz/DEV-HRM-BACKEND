@@ -26,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import vn.system.app.common.util.annotation.ApiMessage;
 import vn.system.app.common.util.error.StorageException;
+import vn.system.app.modules.accountingdossier.service.AccountingDossierService;
 import vn.system.app.modules.document.service.DocumentService;
 import vn.system.app.modules.file.domain.response.ResUploadFileDTO;
 import vn.system.app.modules.file.service.FileService;
@@ -38,19 +39,23 @@ public class FileController {
         private final FileService fileService;
         private final TaskAttachmentService taskAttachmentService;
         private final DocumentService documentService;
+        private final AccountingDossierService accountingDossierService;
 
         public FileController(
                         FileService fileService,
                         TaskAttachmentService taskAttachmentService,
-                        DocumentService documentService) {
+                        DocumentService documentService,
+                        AccountingDossierService accountingDossierService) {
                 this.fileService = fileService;
                 this.taskAttachmentService = taskAttachmentService;
                 this.documentService = documentService;
+                this.accountingDossierService = accountingDossierService;
         }
 
         /**
-         * Task attachment và Document đều có cơ chế phân quyền riêng (canViewTask, DocumentAccess/exclude).
-         * File không khớp nguồn nào (avatar, procedures...) giữ hành vi cũ: cho phép user đã đăng nhập.
+         * Task attachment, Document và chứng từ kế toán đều có cơ chế phân quyền riêng
+         * (canViewTask, DocumentAccess/exclude, assertCanReadDossier). File không khớp
+         * nguồn nào (avatar, procedures...) giữ hành vi cũ: cho phép user đã đăng nhập.
          */
         private boolean canAccessFile(String fileName, String folder) {
                 Boolean taskDecision = taskAttachmentService.checkAccessIfTaskAttachment(fileName, folder);
@@ -60,6 +65,10 @@ public class FileController {
                 Boolean documentDecision = documentService.checkAccessIfDocumentFile(fileName);
                 if (documentDecision != null) {
                         return documentDecision;
+                }
+                Boolean dossierDecision = accountingDossierService.checkAccessIfDossierFile(fileName);
+                if (dossierDecision != null) {
+                        return dossierDecision;
                 }
                 return true;
         }

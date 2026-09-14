@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.modules.department.service.DepartmentService;
 import vn.system.app.modules.departmentjobtitle.domain.response.ResDepartmentJobTitleDTO;
 import vn.system.app.modules.departmentjobtitle.service.DepartmentJobTitleQueryService;
 import vn.system.app.modules.organization.domain.response.ResOrganizationChartDTO;
@@ -16,11 +17,14 @@ import vn.system.app.modules.organization.domain.response.ResOrganizationChartNo
 public class DepartmentOrganizationService {
 
     private final DepartmentJobTitleQueryService queryService;
+    private final DepartmentService departmentService;
 
     public DepartmentOrganizationService(
-            DepartmentJobTitleQueryService queryService) {
+            DepartmentJobTitleQueryService queryService,
+            DepartmentService departmentService) {
 
         this.queryService = queryService;
+        this.departmentService = departmentService;
     }
 
     /*
@@ -30,6 +34,8 @@ public class DepartmentOrganizationService {
      */
     @Transactional(readOnly = true)
     public ResOrganizationChartDTO buildDepartmentOrganization(Long departmentId) {
+
+        departmentService.checkDepartmentScope(departmentService.fetchEntityById(departmentId));
 
         List<ResDepartmentJobTitleDTO> list = queryService.fetchDeptAndSectionJobTitles(departmentId);
 

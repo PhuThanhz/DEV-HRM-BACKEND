@@ -203,8 +203,8 @@ public class CareerPathService {
                 .stream()
                 .collect(Collectors.toMap(JobTitle::getId, jt -> jt));
 
-        List<CareerPathResponse> created = new ArrayList<>();
         List<CareerPathBulkResult.SkippedItem> skipped = new ArrayList<>();
+        List<CareerPath> toCreate = new ArrayList<>();
 
         for (Long jobTitleId : requestedIds) {
 
@@ -236,9 +236,14 @@ public class CareerPathService {
             e.setStatus(req.getStatus());
             e.setActive(true);
 
-            repo.save(e);
-            created.add(convertToResponse(e));
+            toCreate.add(e);
         }
+
+        // ✅ Fix N+1: ghi hàng loạt bằng 1 lần saveAll thay vì save() từng bản ghi trong loop
+        List<CareerPathResponse> created = repo.saveAll(toCreate)
+                .stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
 
         return CareerPathBulkResult.builder()
                 .created(created)

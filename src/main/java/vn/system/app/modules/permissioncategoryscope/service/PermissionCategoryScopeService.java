@@ -64,9 +64,18 @@ public class PermissionCategoryScopeService {
             throw new IdInvalidException("Danh sách chức danh phòng ban bị trùng");
         }
 
+        // ✅ Fix N+1: fetch hàng loạt bằng 1 query thay vì fetchEntityById từng id trong loop
+        Map<Long, DepartmentJobTitle> djtMap = departmentJobTitleService
+                .fetchEntitiesByIds(uniqueIds.stream().toList())
+                .stream()
+                .collect(Collectors.toMap(DepartmentJobTitle::getId, djt -> djt));
+
         // ===== validate & chống gán sai phòng ban =====
         for (Long djtId : uniqueIds) {
-            DepartmentJobTitle djt = departmentJobTitleService.fetchEntityById(djtId);
+            DepartmentJobTitle djt = djtMap.get(djtId);
+            if (djt == null) {
+                throw new IdInvalidException("Không tìm thấy chức danh phòng ban ID = " + djtId);
+            }
             if (!djt.getDepartment().getId().equals(departmentId)) {
                 throw new IdInvalidException("Chức danh không thuộc phòng ban đã chọn");
             }
@@ -83,13 +92,16 @@ public class PermissionCategoryScopeService {
                 categoryId,
                 allDeptJobTitleIds);
 
-        // ===== insert mới =====
-        for (Long djtId : uniqueIds) {
-            PermissionCategoryScope scope = new PermissionCategoryScope();
-            scope.setCategory(category);
-            scope.setDepartmentJobTitleId(djtId);
-            repository.save(scope);
-        }
+        // ===== insert mới — ghi hàng loạt bằng saveAll thay vì save() từng bản ghi =====
+        List<PermissionCategoryScope> toInsert = uniqueIds.stream()
+                .map(djtId -> {
+                    PermissionCategoryScope scope = new PermissionCategoryScope();
+                    scope.setCategory(category);
+                    scope.setDepartmentJobTitleId(djtId);
+                    return scope;
+                })
+                .toList();
+        repository.saveAll(toInsert);
 
         return fetchGrouped(categoryId, departmentId);
     }
@@ -131,11 +143,19 @@ public class PermissionCategoryScopeService {
         res.setDepartment(dep);
 
         // ===== JOB TITLES =====
+        // ✅ Fix N+1: fetch hàng loạt DepartmentJobTitle thay vì fetchEntityById từng scope trong loop
+        Map<Long, DepartmentJobTitle> djtById = departmentJobTitleService
+                .fetchEntitiesByIds(scopes.stream().map(PermissionCategoryScope::getDepartmentJobTitleId).toList())
+                .stream()
+                .collect(Collectors.toMap(DepartmentJobTitle::getId, djt -> djt));
+
         Map<Long, ResPermissionCategoryScopeGroupedDTO.JobTitle> jtMap = new LinkedHashMap<>();
 
         for (PermissionCategoryScope scope : scopes) {
-            DepartmentJobTitle djt = departmentJobTitleService.fetchEntityById(
-                    scope.getDepartmentJobTitleId());
+            DepartmentJobTitle djt = djtById.get(scope.getDepartmentJobTitleId());
+            if (djt == null) {
+                continue;
+            }
 
             ResPermissionCategoryScopeGroupedDTO.JobTitle jt = new ResPermissionCategoryScopeGroupedDTO.JobTitle();
 

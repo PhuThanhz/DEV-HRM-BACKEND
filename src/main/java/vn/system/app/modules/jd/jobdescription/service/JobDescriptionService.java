@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.SecurityUtil;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.common.util.error.PermissionException;
 
 import vn.system.app.modules.jd.jobdescription.domain.JobDescription;
 import vn.system.app.modules.jd.jobdescription.domain.request.ReqCreateJobDescriptionDTO;
@@ -94,10 +95,15 @@ public class JobDescriptionService {
         }
 
         if (jds.isEmpty()) {
-            jds = repository.findByStatus("PUBLISHED");
-            if (jds.isEmpty()) {
-                jds = repository.findAll();
-            }
+            List<Long> companyIds = positions.stream()
+                    .map(this::resolveCompanyIdFromPosition)
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+
+            jds = companyIds.isEmpty()
+                    ? List.of()
+                    : repository.findByStatusAndCompany_IdIn("PUBLISHED", companyIds);
         }
 
         List<Long> taskIds = jds.stream()
@@ -141,6 +147,18 @@ public class JobDescriptionService {
         }
 
         return result;
+    }
+
+    private Long resolveCompanyIdFromPosition(vn.system.app.modules.userposition.domain.UserPosition pos) {
+        return switch (pos.getSource().toUpperCase()) {
+            case "COMPANY" -> pos.getCompanyJobTitle() != null
+                    ? pos.getCompanyJobTitle().getCompany().getId() : null;
+            case "DEPARTMENT" -> pos.getDepartmentJobTitle() != null
+                    ? pos.getDepartmentJobTitle().getDepartment().getCompany().getId() : null;
+            case "SECTION" -> pos.getSectionJobTitle() != null
+                    ? pos.getSectionJobTitle().getSection().getDepartment().getCompany().getId() : null;
+            default -> null;
+        };
     }
 
     /*
@@ -246,12 +264,9 @@ public class JobDescriptionService {
         if ("IN_REVIEW".equals(current.getStatus())) {
             throw new RuntimeException("JD đang duyệt, không thể chỉnh sửa");
         }
-        if ("REJECTED".equals(current.getStatus())) {
-            String email = SecurityUtil.getCurrentUserLogin().orElse("");
-            if (!email.equals(current.getCreatedBy())) {
-                throw new RuntimeException("Bạn không có quyền chỉnh sửa JD này");
-            }
-        }
+
+        assertOwnerOrAdmin(current);
+
         if (Boolean.TRUE.equals(req.getPublishDirectly())) {
             String email = SecurityUtil.getCurrentUserLogin().orElse("");
             User currentUser = userRepository.findByEmail(email);
@@ -300,9 +315,12 @@ public class JobDescriptionService {
      * DELETE
      * ==========================================
      */
+    @Transactional
     public void handleDelete(Long id) {
 
         JobDescription jd = fetchById(id);
+
+        assertOwnerOrAdmin(jd);
 
         if ("PUBLISHED".equals(jd.getStatus())) {
             throw new RuntimeException("Không thể xóa JD đã ban hành");
@@ -310,6 +328,22 @@ public class JobDescriptionService {
 
         if ("IN_REVIEW".equals(jd.getStatus())) {
             throw new RuntimeException("JD đang duyệt không thể xóa");
+        }
+
+        if (jd.getTasks() != null) {
+            jd.getTasks().forEach(t -> taskService.delete(t.getId()));
+        }
+        if (jd.getRequirement() != null) {
+            requirementService.delete(jd.getRequirement().getId());
+        }
+        if (jd.getPositions() != null) {
+            jd.getPositions().forEach(p -> positionService.delete(p.getId()));
+        }
+        jdFlowLogService.deleteByJobDescription(id);
+
+        JdFlow flow = jdFlowRepository.findByJobDescriptionId(id);
+        if (flow != null) {
+            jdFlowRepository.delete(flow);
         }
 
         repository.delete(jd);
@@ -406,6 +440,30 @@ public class JobDescriptionService {
                 && jd.getSectionJobTitle() == null) {
             throw new IdInvalidException(
                     "JobDescription phải gắn ít nhất 1 chức danh");
+        }
+    }
+
+    /*
+     * ==========================================
+     * QUYỀN SỞ HỮU + PHẠM VI CÔNG TY (cho sửa/xóa JD)
+     * ==========================================
+     */
+    private void assertOwnerOrAdmin(JobDescription jd) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        boolean isAdmin = scope != null && (scope.isSuperAdmin() || scope.isAdminLevel());
+
+        if (!isAdmin) {
+            String email = SecurityUtil.getCurrentUserLogin().orElse("");
+            if (!email.equals(jd.getCreatedBy())) {
+                throw new PermissionException("Bạn không có quyền thao tác trên JD này");
+            }
+        }
+
+        if (scope != null && !isAdmin && scope.isCompanyLevel()) {
+            Long companyId = jd.getCompany() != null ? jd.getCompany().getId() : null;
+            if (companyId == null || scope.companyIds() == null || !scope.companyIds().contains(companyId)) {
+                throw new PermissionException("Bạn không có quyền thao tác dữ liệu cho công ty này");
+            }
         }
     }
 

@@ -21,7 +21,8 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             "department",
             "department.company",
             "jobDescriptionTask",
-            "jobDescriptionTaskItem"
+            "jobDescriptionTaskItem",
+            "kpiGroup"
     })
     List<Task> findAll(Specification<Task> spec, Sort sort);
 
@@ -30,7 +31,8 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             "department",
             "department.company",
             "jobDescriptionTask",
-            "jobDescriptionTaskItem"
+            "jobDescriptionTaskItem",
+            "kpiGroup"
     })
     Page<Task> findAll(Specification<Task> spec, Pageable pageable);
 
@@ -39,7 +41,10 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
             "department",
             "department.company",
             "jobDescriptionTask",
-            "jobDescriptionTaskItem"
+            "jobDescriptionTaskItem",
+            "kpiGroup"
     })
     List<Task> findAll(Specification<Task> spec);
+
+    boolean existsByKpiGroupId(Long kpiGroupId);
 }

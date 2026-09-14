@@ -144,17 +144,13 @@ public class AuthController {
                 .body(res);
     }
 
+    /**
+     * Không tin tưởng "X-Forwarded-For"/"X-Real-IP" cho mục đích rate-limit vì hệ thống
+     * chưa cấu hình trusted reverse-proxy — các header này do client tự đặt được, dùng
+     * chúng làm khoá rate-limit sẽ cho phép né giới hạn số lần đăng nhập sai bằng cách
+     * đổi header mỗi request.
+     */
     private String extractClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip != null && !ip.isBlank()) {
-            return ip.split(",")[0].trim();
-        }
-
-        ip = request.getHeader("X-Real-IP");
-        if (ip != null && !ip.isBlank()) {
-            return ip.trim();
-        }
-
         return request.getRemoteAddr();
     }
 

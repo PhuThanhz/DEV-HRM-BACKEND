@@ -1,8 +1,6 @@
 package vn.system.app.modules.role.service;
 
-import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -12,6 +10,8 @@ import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.modules.permission.domain.Permission;
 import vn.system.app.modules.permission.repository.PermissionRepository;
 import vn.system.app.modules.role.domain.Role;
+import vn.system.app.modules.role.domain.request.ReqCreateRoleDTO;
+import vn.system.app.modules.role.domain.request.ReqUpdateRoleDTO;
 import vn.system.app.modules.role.repository.RoleRepository;
 
 @Service
@@ -31,17 +31,16 @@ public class RoleService {
         return this.roleRepository.existsByName(name);
     }
 
-    public Role create(Role r) {
-        // check permissions
-        if (r.getPermissions() != null) {
-            List<Long> reqPermissions = r.getPermissions()
-                    .stream().map(x -> x.getId())
-                    .collect(Collectors.toList());
-
-            List<Permission> dbPermissions = this.permissionRepository.findByIdIn(reqPermissions);
-            r.setPermissions(dbPermissions);
+    // Nhận DTO thay vì entity — tránh mass-assignment id (client không thể tự
+    // chọn id để merge đè lên role có sẵn khi tạo mới)
+    public Role create(ReqCreateRoleDTO req) {
+        Role r = new Role();
+        r.setName(req.getName());
+        r.setDescription(req.getDescription());
+        r.setActive(req.isActive());
+        if (req.getPermissionIds() != null) {
+            r.setPermissions(this.permissionRepository.findByIdIn(req.getPermissionIds()));
         }
-
         return this.roleRepository.save(r);
     }
 
@@ -52,22 +51,18 @@ public class RoleService {
         return null;
     }
 
-    public Role update(Role r) {
-        Role roleDB = this.fetchById(r.getId());
-        // check permissions
-        if (r.getPermissions() != null) {
-            List<Long> reqPermissions = r.getPermissions()
-                    .stream().map(x -> x.getId())
-                    .collect(Collectors.toList());
-
-            List<Permission> dbPermissions = this.permissionRepository.findByIdIn(reqPermissions);
-            r.setPermissions(dbPermissions);
+    public Role update(ReqUpdateRoleDTO req) {
+        Role roleDB = this.fetchById(req.getId());
+        if (roleDB == null) {
+            return null;
         }
 
-        roleDB.setName(r.getName());
-        roleDB.setDescription(r.getDescription());
-        roleDB.setActive(r.isActive());
-        roleDB.setPermissions(r.getPermissions());
+        roleDB.setName(req.getName());
+        roleDB.setDescription(req.getDescription());
+        roleDB.setActive(req.isActive());
+        if (req.getPermissionIds() != null) {
+            roleDB.setPermissions(this.permissionRepository.findByIdIn(req.getPermissionIds()));
+        }
         roleDB = this.roleRepository.save(roleDB);
         return roleDB;
     }

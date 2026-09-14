@@ -8,10 +8,10 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.modules.jobpositionchart.domain.JobPositionChart;
 import vn.system.app.modules.jobpositionchart.repository.JobPositionChartRepository;
+import vn.system.app.modules.jobpositionchart.service.JobPositionChartService;
 import vn.system.app.modules.jd.jobdescription.domain.JobDescription;
 import vn.system.app.modules.jd.jobdescription.repository.JobDescriptionRepository;
 import vn.system.app.modules.jobpositionnode.domain.JobPositionNode;
@@ -27,30 +27,30 @@ public class JobPositionNodeService {
 
     private final JobPositionNodeRepository nodeRepository;
     private final JobPositionChartRepository chartRepository;
+    private final JobPositionChartService chartService;
     private final JobDescriptionRepository jobDescriptionRepository;
 
     public JobPositionNodeService(
             JobPositionNodeRepository nodeRepository,
             JobPositionChartRepository chartRepository,
+            JobPositionChartService chartService,
             JobDescriptionRepository jobDescriptionRepository) {
 
         this.nodeRepository = nodeRepository;
         this.chartRepository = chartRepository;
+        this.chartService = chartService;
         this.jobDescriptionRepository = jobDescriptionRepository;
     }
 
     /*
      * ==================================
      * VALIDATE SCOPE (IDOR Protection)
+     * Dùng chung logic với JobPositionChartService để xử lý đúng cả chart
+     * DEPARTMENT-type (trước đây chỉ check companyId nên bỏ sót case này)
      * ==================================
      */
     private void validateScope(JobPositionChart chart) {
-        UserScopeContext.UserScope scope = UserScopeContext.get();
-        if (scope != null && !scope.isAdminLevel()) {
-            if (chart.getCompanyId() != null && !scope.companyIds().contains(chart.getCompanyId())) {
-                throw new IdInvalidException("Bạn không có quyền thao tác trên sơ đồ này");
-            }
-        }
+        chartService.validateScope(chart);
     }
 
     /*

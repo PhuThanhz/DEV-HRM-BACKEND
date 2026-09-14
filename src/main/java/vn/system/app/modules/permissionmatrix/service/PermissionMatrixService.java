@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import vn.system.app.common.util.error.IdInvalidException;
 
+import vn.system.app.modules.department.service.DepartmentService;
 import vn.system.app.modules.departmentjobtitle.domain.DepartmentJobTitle;
 import vn.system.app.modules.departmentjobtitle.service.DepartmentJobTitleService;
 
@@ -35,19 +36,22 @@ public class PermissionMatrixService {
     private final PermissionCategoryScopeRepository scopeRepo;
     private final DepartmentJobTitleService djtService;
     private final PermissionAssignmentRepository assignmentRepo;
+    private final DepartmentService departmentService;
 
     public PermissionMatrixService(
             PermissionContentRepository contentRepo,
             PermissionCategoryRepository categoryRepo,
             PermissionCategoryScopeRepository scopeRepo,
             DepartmentJobTitleService djtService,
-            PermissionAssignmentRepository assignmentRepo) {
+            PermissionAssignmentRepository assignmentRepo,
+            DepartmentService departmentService) {
 
         this.contentRepo = contentRepo;
         this.categoryRepo = categoryRepo;
         this.scopeRepo = scopeRepo;
         this.djtService = djtService;
         this.assignmentRepo = assignmentRepo;
+        this.departmentService = departmentService;
     }
 
     // =============================================================
@@ -60,6 +64,7 @@ public class PermissionMatrixService {
         PermissionCategory category = categoryRepo.findById(categoryId)
                 .orElseThrow(() -> new IdInvalidException("Danh mục không tồn tại"));
 
+        departmentService.checkDepartmentScope(category.getDepartment());
         Long departmentId = category.getDepartment().getId();
 
         // 2️⃣ Load toàn bộ nội dung theo category

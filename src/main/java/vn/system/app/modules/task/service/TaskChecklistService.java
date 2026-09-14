@@ -4,12 +4,15 @@ import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import vn.system.app.common.util.SecurityUtil;
 import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.modules.notification.service.NotificationService;
 import vn.system.app.modules.task.domain.Task;
 import vn.system.app.modules.task.domain.TaskChecklist;
 import vn.system.app.modules.task.domain.enums.TaskParticipantRole;
@@ -25,23 +28,28 @@ import vn.system.app.modules.user.repository.UserRepository;
 @Service
 public class TaskChecklistService {
 
+    private static final Logger log = LoggerFactory.getLogger(TaskChecklistService.class);
+
     private final TaskChecklistRepository checklistRepository;
     private final TaskRepository taskRepository;
     private final TaskParticipantRepository participantRepository;
     private final UserRepository userRepository;
     private final TaskAccessService taskAccessService;
+    private final NotificationService notificationService;
 
     public TaskChecklistService(
             TaskChecklistRepository checklistRepository,
             TaskRepository taskRepository,
             TaskParticipantRepository participantRepository,
             UserRepository userRepository,
-            TaskAccessService taskAccessService) {
+            TaskAccessService taskAccessService,
+            NotificationService notificationService) {
         this.checklistRepository = checklistRepository;
         this.taskRepository = taskRepository;
         this.participantRepository = participantRepository;
         this.userRepository = userRepository;
         this.taskAccessService = taskAccessService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -67,6 +75,7 @@ public class TaskChecklistService {
         item.setSortOrder(req.getSortOrder() != null ? req.getSortOrder() : 0);
 
         TaskChecklist saved = checklistRepository.save(item);
+        notifyChecklistAssigned(task, assignedUser, currentUserId);
         return convertToResDTO(saved);
     }
 
@@ -95,8 +104,12 @@ public class TaskChecklistService {
             if (req.getAssignedUserId().isBlank()) {
                 item.setAssignedUser(null);
             } else {
+                String oldAssignedUserId = item.getAssignedUser() != null ? item.getAssignedUser().getId() : null;
                 User assignedUser = validateAssignedUserIsParticipant(taskId, req.getAssignedUserId());
                 item.setAssignedUser(assignedUser);
+                if (!assignedUser.getId().equals(oldAssignedUserId)) {
+                    notifyChecklistAssigned(task, assignedUser, currentUserId);
+                }
             }
         }
 
@@ -186,6 +199,22 @@ public class TaskChecklistService {
 
         List<TaskChecklist> list = checklistRepository.findByTaskIdOrderBySortOrderAscIdAsc(taskId);
         return list.stream().map(this::convertToResDTO).collect(Collectors.toList());
+    }
+
+    private void notifyChecklistAssigned(Task task, User assignedUser, String actorId) {
+        if (assignedUser == null || assignedUser.getId().equals(actorId)) {
+            return;
+        }
+        try {
+            notificationService.sendNotification(
+                    assignedUser.getId(),
+                    "TASK",
+                    "TASK_CHECKLIST_ASSIGNED",
+                    "Bạn được gán 1 mục kiểm tra trong tác vụ: " + task.getTitle(),
+                    "/admin/tasks?taskId=" + task.getId());
+        } catch (Exception e) {
+            log.warn("Không thể gửi thông báo gán mục kiểm tra cho task {}: {}", task.getId(), e.getMessage());
+        }
     }
 
     private void toggleItemInternal(TaskChecklist item, String actorUserId, boolean completed) {

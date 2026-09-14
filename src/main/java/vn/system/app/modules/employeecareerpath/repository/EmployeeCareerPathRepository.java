@@ -21,12 +21,13 @@ public interface EmployeeCareerPathRepository
   // Lấy theo phòng ban qua template.department
   List<EmployeeCareerPath> findByTemplate_Department_IdAndActiveTrue(Long departmentId);
 
-  // [FIX 2] Thêm JOIN FETCH tránh N+1 query khi truy cập template.steps
+  // [FIX 2] JOIN FETCH tránh N+1 khi truy cập template.steps. Không fetch join
+  // thêm e.histories ở đây vì Hibernate không cho fetch 2 collection (bag) khác
+  // nhau trong cùng 1 query — histories dùng @BatchSize(20) trên entity thay thế.
   @Query("""
           SELECT DISTINCT e FROM EmployeeCareerPath e
           JOIN FETCH e.template t
           JOIN FETCH t.steps
-          LEFT JOIN FETCH e.histories
           WHERE e.active = true
             AND e.progressStatus = 0
             AND e.stepStartedAt IS NOT NULL

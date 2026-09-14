@@ -138,6 +138,9 @@ public class TaskExtensionRequestService {
         if (extension.getStatus() != TaskExtensionStatus.PENDING) {
             throw new IdInvalidException("Yêu cầu gia hạn này đã được xử lý");
         }
+        if (task.getStatus() != TaskStatus.IN_PROGRESS && task.getStatus() != TaskStatus.REWORK) {
+            throw new IdInvalidException("Không thể duyệt gia hạn vì tác vụ không còn ở trạng thái Đang làm hoặc Yêu cầu làm lại");
+        }
 
         String currentUserId = SecurityUtil.getCurrentUserId()
                 .orElseThrow(() -> new IdInvalidException("Bạn chưa đăng nhập"));
@@ -212,6 +215,24 @@ public class TaskExtensionRequestService {
         } else {
             throw new IdInvalidException("Quyết định không hợp lệ (chỉ chấp nhận APPROVE hoặc REJECT)");
         }
+    }
+
+    /*
+     * =====================================================
+     * TỰ ĐỘNG TỪ CHỐI REQUEST PENDING KHI TASK RỜI KHỎI IN_PROGRESS/REWORK
+     * (vd: assignee nộp kết quả trong lúc request gia hạn còn chờ duyệt)
+     * để tránh request "mồ côi" bị duyệt nhầm sau khi task đã qua giai đoạn khác.
+     * =====================================================
+     */
+    @Transactional
+    public void autoRejectPendingExtension(Task task, String reason) {
+        extensionRepository.findByTaskIdAndStatus(task.getId(), TaskExtensionStatus.PENDING)
+                .ifPresent(extension -> {
+                    extension.setStatus(TaskExtensionStatus.REJECTED);
+                    extension.setDecidedAt(Instant.now());
+                    extension.setDecisionNote(reason);
+                    extensionRepository.save(extension);
+                });
     }
 
     @Transactional(readOnly = true)

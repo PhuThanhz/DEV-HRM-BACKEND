@@ -18,6 +18,8 @@ import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.annotation.ApiMessage;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.modules.role.domain.Role;
+import vn.system.app.modules.role.domain.request.ReqCreateRoleDTO;
+import vn.system.app.modules.role.domain.request.ReqUpdateRoleDTO;
 import vn.system.app.modules.role.service.RoleService;
 
 @RestController
@@ -32,29 +34,23 @@ public class RoleController {
 
     @PostMapping("/roles")
     @ApiMessage("Create a role")
-    public ResponseEntity<Role> create(@Valid @RequestBody Role r) throws IdInvalidException {
+    public ResponseEntity<Role> create(@Valid @RequestBody ReqCreateRoleDTO req) throws IdInvalidException {
         // check name
-        if (this.roleService.existByName(r.getName())) {
-            throw new IdInvalidException("Role với name = " + r.getName() + " đã tồn tại");
+        if (this.roleService.existByName(req.getName())) {
+            throw new IdInvalidException("Role với name = " + req.getName() + " đã tồn tại");
         }
-        return ResponseEntity.status(HttpStatus.CREATED).body(this.roleService.create(r));
+        return ResponseEntity.status(HttpStatus.CREATED).body(this.roleService.create(req));
     }
 
     @PutMapping("/roles")
     @ApiMessage("Update a role")
-    public ResponseEntity<Role> update(@Valid @RequestBody Role r) throws IdInvalidException {
+    public ResponseEntity<Role> update(@Valid @RequestBody ReqUpdateRoleDTO req) throws IdInvalidException {
         // check id
-        if (this.roleService.fetchById(r.getId()) == null) {
-            throw new IdInvalidException("Role với id = " + r.getId() + " không tồn tại");
+        if (this.roleService.fetchById(req.getId()) == null) {
+            throw new IdInvalidException("Role với id = " + req.getId() + " không tồn tại");
         }
 
-        // check name
-        // if (this.roleService.existByName(r.getName())) {
-        // throw new IdInvalidException("Role với name = " + r.getName() + " đã tồn
-        // tại");
-        // }
-
-        return ResponseEntity.ok().body(this.roleService.update(r));
+        return ResponseEntity.ok().body(this.roleService.update(req));
     }
 
     @DeleteMapping("/roles/{id}")
@@ -82,7 +78,7 @@ public class RoleController {
 
         Role role = this.roleService.fetchById(id);
         if (role == null) {
-            throw new IdInvalidException("Resume với id = " + id + " không tồn tại");
+            throw new IdInvalidException("Role với id = " + id + " không tồn tại");
         }
 
         return ResponseEntity.ok().body(role);

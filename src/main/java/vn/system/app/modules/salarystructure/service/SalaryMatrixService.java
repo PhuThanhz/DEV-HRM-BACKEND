@@ -37,6 +37,8 @@ import vn.system.app.modules.salarystructure.repository.SalaryStructureRepositor
 import vn.system.app.modules.departmentjobtitle.domain.response.ResDepartmentJobTitleDTO;
 import vn.system.app.modules.departmentjobtitle.service.DepartmentJobTitleScopeService;
 
+import vn.system.app.modules.department.service.DepartmentService;
+
 import vn.system.app.modules.user.domain.User;
 import vn.system.app.modules.user.repository.UserRepository;
 import vn.system.app.modules.userposition.repository.UserPositionRepository;
@@ -46,6 +48,7 @@ import vn.system.app.modules.userposition.repository.UserPositionRepository;
 public class SalaryMatrixService {
 
     private final DepartmentJobTitleScopeService scopeService;
+    private final DepartmentService departmentService;
 
     private final CompanyJobTitleRepository companyJobTitleRepo;
     private final DepartmentJobTitleRepository deptJobTitleRepo;
@@ -66,6 +69,8 @@ public class SalaryMatrixService {
     // ======================================================
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getDepartmentSalaryMatrix(Long departmentId) {
+
+        departmentService.checkDepartmentScope(departmentService.fetchEntityById(departmentId));
 
         List<ResDepartmentJobTitleDTO> jobTitles = scopeService.fetchByScope(departmentId, true);
         List<Map<String, Object>> result = new ArrayList<>();

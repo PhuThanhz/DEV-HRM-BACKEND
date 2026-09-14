@@ -20,6 +20,8 @@ import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
 import vn.system.app.modules.task.domain.Task;
 import vn.system.app.modules.task.domain.TaskParticipant;
+import vn.system.app.modules.task.domain.TaskSubmission;
+import vn.system.app.modules.task.domain.enums.KpiCycleType;
 import vn.system.app.modules.task.domain.enums.TaskParticipantRole;
 import vn.system.app.modules.task.domain.enums.TaskPriority;
 import vn.system.app.modules.task.domain.enums.TaskStatus;
@@ -27,6 +29,7 @@ import vn.system.app.modules.task.domain.response.ResTaskDTO;
 import vn.system.app.modules.task.domain.response.ResTaskSummaryReportDTO;
 import vn.system.app.modules.task.repository.TaskParticipantRepository;
 import vn.system.app.modules.task.repository.TaskRepository;
+import vn.system.app.modules.task.repository.TaskSubmissionRepository;
 
 @Service
 public class TaskSummaryReportService {
@@ -35,20 +38,23 @@ public class TaskSummaryReportService {
 
     private final TaskRepository taskRepository;
     private final TaskParticipantRepository participantRepository;
+    private final TaskSubmissionRepository submissionRepository;
     private final TaskService taskService;
 
     public TaskSummaryReportService(
             TaskRepository taskRepository,
             TaskParticipantRepository participantRepository,
+            TaskSubmissionRepository submissionRepository,
             TaskService taskService) {
         this.taskRepository = taskRepository;
         this.participantRepository = participantRepository;
+        this.submissionRepository = submissionRepository;
         this.taskService = taskService;
     }
 
     private Specification<Task> buildSpecification(
             Instant filterFrom, Instant filterTo, Long departmentId, Long companyId, String assigneeId, TaskPriority priority, String title,
-            Boolean isOnTime, String createdBy, Boolean isJdTask) {
+            Boolean isOnTime, String createdBy, Boolean isJdTask, Long kpiGroupId, KpiCycleType kpiCycleType) {
 
         Specification<Task> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -79,6 +85,12 @@ public class TaskSummaryReportService {
                 predicates.add(isJdTask
                         ? cb.isNotNull(root.get("jobDescriptionTaskId"))
                         : cb.isNull(root.get("jobDescriptionTaskId")));
+            }
+            if (kpiGroupId != null) {
+                predicates.add(cb.equal(root.get("kpiGroupId"), kpiGroupId));
+            }
+            if (kpiCycleType != null) {
+                predicates.add(cb.equal(root.get("kpiCycleType"), kpiCycleType));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));
@@ -139,15 +151,25 @@ public class TaskSummaryReportService {
         List<Long> taskIds = tasks.stream().map(Task::getId).toList();
 
         Map<Long, List<TaskParticipant>> participantMap = new HashMap<>();
+        Map<Long, TaskSubmission> latestSubmissionMap = new HashMap<>();
         if (!taskIds.isEmpty()) {
             List<TaskParticipant> participants = participantRepository.findByTaskIdIn(taskIds);
             for (TaskParticipant p : participants) {
                 participantMap.computeIfAbsent(p.getTask().getId(), k -> new ArrayList<>()).add(p);
             }
+
+            List<TaskSubmission> submissions = submissionRepository
+                    .findByTaskIdInOrderByTaskIdAscSubmissionRoundDesc(taskIds);
+            for (TaskSubmission submission : submissions) {
+                latestSubmissionMap.putIfAbsent(submission.getTask().getId(), submission);
+            }
         }
 
         return tasks.stream()
-                .map(t -> taskService.convertToResDTO(t, participantMap.getOrDefault(t.getId(), List.of())))
+                .map(t -> taskService.convertToResDTO(
+                        t,
+                        participantMap.getOrDefault(t.getId(), List.of()),
+                        latestSubmissionMap))
                 .toList();
     }
 
@@ -211,13 +233,13 @@ public class TaskSummaryReportService {
     @Transactional(readOnly = true)
     public ResTaskSummaryReportDTO generateReport(
             Instant from, Instant to, Long departmentId, Long companyId, String assigneeId, TaskPriority priority, String title,
-            Boolean isOnTime, String createdBy, Boolean isJdTask) {
+            Boolean isOnTime, String createdBy, Boolean isJdTask, Long kpiGroupId, KpiCycleType kpiCycleType) {
 
         Instant[] range = resolveReportDateRange(from, to);
         Instant filterFrom = range[0];
         Instant filterTo = range[1];
 
-        Specification<Task> spec = buildSpecification(filterFrom, filterTo, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask);
+        Specification<Task> spec = buildSpecification(filterFrom, filterTo, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask, kpiGroupId, kpiCycleType);
         List<Task> completedTasks = taskRepository.findAll(spec);
         List<ResTaskDTO> taskDtos = convertTasksToDtos(completedTasks);
 
@@ -243,6 +265,17 @@ public class TaskSummaryReportService {
         return EXCEL_DATE_FORMATTER.format(instant);
     }
 
+    private String formatCycleLabel(KpiCycleType cycleType) {
+        if (cycleType == null) return "N/A";
+        return switch (cycleType) {
+            case MONTHLY -> "Tháng";
+            case QUARTERLY -> "Quý";
+            case YEARLY -> "Năm";
+            case PHASE -> "Giai đoạn";
+            case PROJECT -> "Dự án";
+        };
+    }
+
     private String formatPriorityLabel(TaskPriority priority) {
         if (priority == null) return "Trung bình";
         return switch (priority) {
@@ -255,12 +288,12 @@ public class TaskSummaryReportService {
 
     @Transactional(readOnly = true)
     public byte[] exportToExcel(Instant from, Instant to, Long departmentId, Long companyId, String assigneeId, TaskPriority priority, String title,
-            Boolean isOnTime, String createdBy, Boolean isJdTask) {
+            Boolean isOnTime, String createdBy, Boolean isJdTask, Long kpiGroupId, KpiCycleType kpiCycleType) {
         Instant[] range = resolveReportDateRange(from, to);
         Instant filterFrom = range[0];
         Instant filterTo = range[1];
 
-        Specification<Task> spec = buildSpecification(filterFrom, filterTo, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask);
+        Specification<Task> spec = buildSpecification(filterFrom, filterTo, departmentId, companyId, assigneeId, priority, title, isOnTime, createdBy, isJdTask, kpiGroupId, kpiCycleType);
         List<Task> completedTasks = taskRepository.findAll(spec);
         List<ResTaskDTO> taskDtos = convertTasksToDtos(completedTasks);
 
@@ -278,6 +311,8 @@ public class TaskSummaryReportService {
                 "Người thực hiện chính",
                 "Tên tác vụ",
                 "Loại công việc",
+                "Nhóm KPI",
+                "Chu kỳ KPI",
                 "Độ ưu tiên",
                 "Ngày bắt đầu",
                 "Hạn chót",
@@ -296,6 +331,8 @@ public class TaskSummaryReportService {
                     t.getAssigneeName() != null ? t.getAssigneeName() : "Chưa phân công",
                     t.getTitle() != null ? t.getTitle() : "N/A",
                     t.getJobDescriptionTaskId() != null ? "Trong JD" : "Ngoài JD",
+                    t.getKpiGroupName() != null ? t.getKpiGroupName() : "N/A",
+                    formatCycleLabel(t.getKpiCycleType()),
                     formatPriorityLabel(t.getPriority()),
                     formatExcelDate(t.getStartDate()),
                     formatExcelDate(t.getDueDate()),

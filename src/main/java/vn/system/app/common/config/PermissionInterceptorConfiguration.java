@@ -19,6 +19,7 @@ public class PermissionInterceptorConfiguration implements WebMvcConfigurer {
                 "/api/v1/files", "/api/v1/files/public", "/api/public/view/**",
                 "/api/v1/document-categories/active",
                 "/api/v1/accounting-document-categories/active",
+                "/api/v1/kpi-groups/active",
                 // --- PROFILE ---
                 "/api/v1/users/profile",
                 // --- EVALUATION: Notifications (Skipping Permission Check) ---

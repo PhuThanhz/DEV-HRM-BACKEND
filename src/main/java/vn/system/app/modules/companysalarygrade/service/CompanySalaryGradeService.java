@@ -9,7 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
 import vn.system.app.common.util.SecurityUtil;
+import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.modules.companysalarygrade.domain.CompanySalaryGrade;
 import vn.system.app.modules.companysalarygrade.domain.request.*;
 import vn.system.app.modules.companysalarygrade.domain.response.*;
@@ -34,6 +36,20 @@ public class CompanySalaryGradeService {
         }
     }
 
+    // IDOR protection — companyJobTitleId phải thuộc công ty trong phạm vi người gọi
+    public void checkScope(Long companyJobTitleId) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+            return;
+        }
+        Long companyId = companyJobTitleRepo.findById(companyJobTitleId)
+                .map(cjt -> cjt.getCompany().getId())
+                .orElse(null);
+        if (companyId == null || scope.companyIds() == null || !scope.companyIds().contains(companyId)) {
+            throw new PermissionException("Bạn không có quyền thao tác trên khung lương của công ty này");
+        }
+    }
+
     // ======================================================
     // CREATE
     // ======================================================
@@ -44,6 +60,7 @@ public class CompanySalaryGradeService {
         if (!companyJobTitleRepo.existsById(req.getCompanyJobTitleId())) {
             throw new IdInvalidException("CompanyJobTitle ID không tồn tại");
         }
+        checkScope(req.getCompanyJobTitleId());
 
         if (repo.existsByCompanyJobTitleIdAndGradeLevel(
                 req.getCompanyJobTitleId(), req.getGradeLevel())) {
@@ -66,6 +83,7 @@ public class CompanySalaryGradeService {
 
         CompanySalaryGrade entity = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy bậc lương"));
+        checkScope(entity.getCompanyJobTitleId());
 
         if (!entity.isActive()) {
             throw new IdInvalidException("Bậc lương đã vô hiệu, không thể cập nhật");
@@ -89,6 +107,7 @@ public class CompanySalaryGradeService {
     public void delete(Long id) {
         CompanySalaryGrade entity = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy bậc lương"));
+        checkScope(entity.getCompanyJobTitleId());
 
         if (!entity.isActive()) {
             throw new IdInvalidException("Bậc lương đã bị vô hiệu");
@@ -105,6 +124,7 @@ public class CompanySalaryGradeService {
     public ResCompanySalaryGradeDTO restore(Long id) {
         CompanySalaryGrade entity = repo.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy bậc lương"));
+        checkScope(entity.getCompanyJobTitleId());
 
         if (entity.isActive()) {
             throw new IdInvalidException("Bậc lương đang hoạt động");
@@ -121,6 +141,7 @@ public class CompanySalaryGradeService {
         if (companyJobTitleId == null || companyJobTitleId <= 0) {
             throw new IdInvalidException("companyJobTitleId không hợp lệ");
         }
+        checkScope(companyJobTitleId);
 
         return repo.findByCompanyJobTitleIdOrderByGradeLevelAsc(companyJobTitleId)
                 .stream()

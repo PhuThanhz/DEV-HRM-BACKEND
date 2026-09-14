@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.error.IdInvalidException;
 
+import vn.system.app.modules.department.service.DepartmentService;
 import vn.system.app.modules.permissioncategory.domain.PermissionCategory;
 import vn.system.app.modules.permissioncategory.repository.PermissionCategoryRepository;
 import vn.system.app.modules.permissioncontent.domain.PermissionContent;
@@ -25,12 +26,21 @@ public class PermissionContentService {
 
     private final PermissionContentRepository repository;
     private final PermissionCategoryRepository categoryRepository;
+    private final DepartmentService departmentService;
 
     public PermissionContentService(
             PermissionContentRepository repository,
-            PermissionCategoryRepository categoryRepository) {
+            PermissionCategoryRepository categoryRepository,
+            DepartmentService departmentService) {
         this.repository = repository;
         this.categoryRepository = categoryRepository;
+        this.departmentService = departmentService;
+    }
+
+    // IDOR protection — content thuộc category nào thì phải nằm trong
+    // phạm vi phòng ban của category đó
+    private void checkScope(PermissionCategory category) {
+        departmentService.checkDepartmentScope(category.getDepartment());
     }
 
     /*
@@ -49,6 +59,7 @@ public class PermissionContentService {
 
         PermissionCategory category = categoryRepository.findById(req.getCategoryId())
                 .orElseThrow(() -> new IdInvalidException("Danh mục không tồn tại"));
+        checkScope(category);
 
         PermissionContent entity = new PermissionContent();
         entity.setName(req.getName());
@@ -72,6 +83,7 @@ public class PermissionContentService {
         if (entity == null) {
             throw new IdInvalidException("Nội dung quyền không tồn tại");
         }
+        checkScope(entity.getCategory());
 
         boolean duplicated = repository.existsByNameAndCategory_IdAndActiveTrue(
                 req.getName(), entity.getCategory().getId());
@@ -96,6 +108,7 @@ public class PermissionContentService {
         if (entity == null) {
             throw new IdInvalidException("Nội dung quyền không tồn tại");
         }
+        checkScope(entity.getCategory());
 
         entity.setActive(false);
         repository.save(entity);
@@ -111,6 +124,7 @@ public class PermissionContentService {
 
         PermissionContent entity = repository.findById(id)
                 .orElseThrow(() -> new IdInvalidException("Không tìm thấy nội dung quyền"));
+        checkScope(entity.getCategory());
 
         entity.setActive(!entity.isActive());
         return repository.save(entity);
@@ -127,6 +141,7 @@ public class PermissionContentService {
         if (entity == null) {
             throw new IdInvalidException("Nội dung quyền không tồn tại hoặc đã bị vô hiệu hoá");
         }
+        checkScope(entity.getCategory());
         return entity;
     }
 
@@ -142,6 +157,9 @@ public class PermissionContentService {
         if (categoryId == null) {
             throw new IdInvalidException("categoryId là bắt buộc");
         }
+        PermissionCategory category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new IdInvalidException("Danh mục không tồn tại"));
+        checkScope(category);
 
         Page<PermissionContent> page = repository.findByCategory_Id(categoryId, pageable);
 

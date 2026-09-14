@@ -44,7 +44,7 @@ public class UserPositionController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
 
         service.handleDelete(id);
-        return ResponseEntity.ok(null);
+        return ResponseEntity.noContent().build();
     }
 
     // =====================================================

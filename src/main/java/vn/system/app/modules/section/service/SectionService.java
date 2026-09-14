@@ -68,6 +68,7 @@ public class SectionService {
     public ResSectionDTO updateSection(ReqUpdateSectionDTO req) {
 
         Section s = fetchEntityById(req.getId());
+        departmentService.checkDepartmentScope(s.getDepartment());
 
         if (req.getName() != null) {
             s.setName(req.getName());
@@ -90,6 +91,7 @@ public class SectionService {
     @Transactional
     public void setInactive(Long id) {
         Section s = fetchEntityById(id);
+        departmentService.checkDepartmentScope(s.getDepartment());
         s.setStatus(0);
         sectionRepo.save(s);
     }
@@ -102,6 +104,7 @@ public class SectionService {
     @Transactional
     public void setActive(Long id) {
         Section s = fetchEntityById(id);
+        departmentService.checkDepartmentScope(s.getDepartment());
         s.setStatus(1);
         sectionRepo.save(s);
     }

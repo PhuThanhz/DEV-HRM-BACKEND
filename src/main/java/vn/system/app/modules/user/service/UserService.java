@@ -16,6 +16,7 @@ import vn.system.app.common.util.UserScopeContext;
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.SecurityUtil;
 import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.common.util.error.PermissionException;
 import vn.system.app.modules.email.service.EmailService;
 import vn.system.app.modules.employeecareerpath.repository.EmployeeCareerPathRepository;
 import vn.system.app.modules.role.domain.Role;
@@ -176,8 +177,32 @@ public class UserService {
         if (!userRepository.existsById(id)) {
             throw new IdInvalidException("User với id = " + id + " không tồn tại");
         }
+        checkUserScope(id);
 
         this.userRepository.deleteById(id);
+    }
+
+    // ======================================================
+    // SCOPE CHECK (IDOR protection — công ty/phòng ban của user đích phải
+    // nằm trong phạm vi công ty/phòng ban mà người gọi được thấy)
+    // ======================================================
+    private void checkUserScope(String targetUserId) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+            return;
+        }
+
+        List<Long> targetCompanyIds = userPositionRepository.findActiveCompanyIdsByUserId(targetUserId);
+        List<Long> targetDepartmentIds = userPositionRepository.findActiveDepartmentIdsByUserId(targetUserId);
+
+        boolean allowedByCompany = scope.companyIds() != null
+                && targetCompanyIds.stream().anyMatch(scope.companyIds()::contains);
+        boolean allowedByDepartment = scope.departmentIds() != null
+                && targetDepartmentIds.stream().anyMatch(scope.departmentIds()::contains);
+
+        if (!allowedByCompany && !allowedByDepartment) {
+            throw new PermissionException("Bạn không có quyền thao tác trên user này");
+        }
     }
 
     // ======================================================
@@ -185,6 +210,9 @@ public class UserService {
     // ======================================================
     public User fetchUserById(String id) {
         Optional<User> userOptional = this.userRepository.findById(id);
+        if (userOptional.isPresent()) {
+            checkUserScope(id);
+        }
         return userOptional.orElse(null);
     }
 
@@ -621,11 +649,17 @@ public class UserService {
 
         List<String> assignedIds = employeeCareerPathRepository.findAssignedUserIdsByDepartmentId(departmentId);
 
-        return userIds.stream()
+        List<String> unassignedIds = userIds.stream()
                 .filter(id -> !assignedIds.contains(id))
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(opt -> convertToResUserDTO(opt.get()))
+                .collect(Collectors.toList());
+
+        if (unassignedIds.isEmpty())
+            return List.of();
+
+        // ✅ Fix N+1: fetch hàng loạt bằng findAllById thay vì findById từng user trong loop
+        return userRepository.findAllById(unassignedIds)
+                .stream()
+                .map(this::convertToResUserDTO)
                 .collect(Collectors.toList());
     }
     private ResultPaginationDTO emptyPagination(Pageable pageable) {

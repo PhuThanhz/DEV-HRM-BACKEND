@@ -11,8 +11,13 @@ import org.springframework.stereotype.Service;
 
 import vn.system.app.common.response.ResultPaginationDTO;
 import vn.system.app.common.util.UserScopeContext;
+import vn.system.app.common.util.error.IdInvalidException;
+import vn.system.app.modules.department.domain.Department;
 import vn.system.app.modules.department.repository.DepartmentRepository;
+import vn.system.app.modules.department.service.DepartmentService;
 import vn.system.app.modules.jobpositionchart.domain.JobPositionChart;
+import vn.system.app.modules.jobpositionchart.domain.request.ReqCreateJobPositionChartDTO;
+import vn.system.app.modules.jobpositionchart.domain.request.ReqUpdateJobPositionChartDTO;
 import vn.system.app.modules.jobpositionchart.domain.response.ResJobPositionChartDTO;
 import vn.system.app.modules.jobpositionchart.repository.JobPositionChartRepository;
 import vn.system.app.modules.jobpositionnode.repository.JobPositionNodeRepository;
@@ -23,15 +28,52 @@ public class JobPositionChartService {
 
     private final JobPositionChartRepository chartRepository;
     private final DepartmentRepository departmentRepository;
+    private final DepartmentService departmentService;
     private final JobPositionNodeRepository nodeRepository;
 
     public JobPositionChartService(
             JobPositionChartRepository chartRepository,
             DepartmentRepository departmentRepository,
+            DepartmentService departmentService,
             JobPositionNodeRepository nodeRepository) {
         this.chartRepository = chartRepository;
         this.departmentRepository = departmentRepository;
+        this.departmentService = departmentService;
         this.nodeRepository = nodeRepository;
+    }
+
+    /*
+     * ==================================
+     * VALIDATE SCOPE (IDOR Protection)
+     * Chart COMPANY-type: so companyId với scope.companyIds()
+     * Chart DEPARTMENT-type: resolve Department rồi tái dùng
+     * DepartmentService.checkDepartmentScope (xử lý cả company-level lẫn
+     * department-level)
+     * ==================================
+     */
+    public void validateScope(JobPositionChart chart) {
+        UserScopeContext.UserScope scope = UserScopeContext.get();
+        if (scope == null || scope.isSuperAdmin() || scope.isAdminLevel()) {
+            return;
+        }
+
+        if ("DEPARTMENT".equals(chart.getChartType()) && chart.getDepartmentId() != null) {
+            Department dept = departmentRepository.findById(chart.getDepartmentId()).orElse(null);
+            if (dept == null) {
+                throw new IdInvalidException("Bạn không có quyền thao tác trên sơ đồ này");
+            }
+            departmentService.checkDepartmentScope(dept);
+            return;
+        }
+
+        if (chart.getCompanyId() != null) {
+            if (scope.companyIds() == null || !scope.companyIds().contains(chart.getCompanyId())) {
+                throw new IdInvalidException("Bạn không có quyền thao tác trên sơ đồ này");
+            }
+            return;
+        }
+
+        throw new IdInvalidException("Bạn không có quyền thao tác trên sơ đồ này");
     }
 
     /*
@@ -39,7 +81,14 @@ public class JobPositionChartService {
      * CREATE CHART
      * ==========================
      */
-    public JobPositionChart handleCreateChart(JobPositionChart chart) {
+    public JobPositionChart handleCreateChart(ReqCreateJobPositionChartDTO req) {
+        JobPositionChart chart = new JobPositionChart();
+        chart.setName(req.getName());
+        chart.setChartType(req.getChartType());
+        chart.setCompanyId(req.getCompanyId());
+        chart.setDepartmentId(req.getDepartmentId());
+
+        validateScope(chart);
         return this.chartRepository.save(chart);
     }
 
@@ -50,6 +99,10 @@ public class JobPositionChartService {
      */
     @Transactional
     public void handleDeleteChart(Long id) {
+        JobPositionChart chart = this.chartRepository.findById(id)
+                .orElseThrow(() -> new IdInvalidException("Sơ đồ với id = " + id + " không tồn tại"));
+        validateScope(chart);
+
         // 1. Xóa tất cả các node thuộc sơ đồ này trước
         this.nodeRepository.deleteByChartId(id);
 
@@ -64,6 +117,7 @@ public class JobPositionChartService {
      */
     public JobPositionChart fetchChartById(Long id) {
         Optional<JobPositionChart> chartOptional = this.chartRepository.findById(id);
+        chartOptional.ifPresent(this::validateScope);
         return chartOptional.orElse(null);
     }
 
@@ -72,15 +126,19 @@ public class JobPositionChartService {
      * UPDATE CHART
      * ==========================
      */
-    public JobPositionChart handleUpdateChart(JobPositionChart req) {
+    public JobPositionChart handleUpdateChart(ReqUpdateJobPositionChartDTO req) {
 
-        JobPositionChart current = this.fetchChartById(req.getId());
+        Optional<JobPositionChart> currentOptional = this.chartRepository.findById(req.getId());
+        JobPositionChart current = currentOptional.orElse(null);
 
         if (current != null) {
+            validateScope(current);
+
             current.setName(req.getName());
             current.setChartType(req.getChartType());
             current.setCompanyId(req.getCompanyId());
             current.setDepartmentId(req.getDepartmentId());
+            validateScope(current);
 
             current = this.chartRepository.save(current);
         }
